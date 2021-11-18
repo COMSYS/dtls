@@ -2,7 +2,6 @@ package handshake
 
 import (
 	"encoding/binary"
-
 	"github.com/pion/dtls/v2/pkg/protocol"
 	"github.com/pion/dtls/v2/pkg/protocol/extension"
 )

@@ -3,6 +3,7 @@ package dtls
 import (
 	"bytes"
 	"encoding/gob"
+	cs "github.com/pion/dtls/v2/pkg/protocol/ciphersuite"
 	"sync/atomic"
 
 	"github.com/pion/dtls/v2/pkg/crypto/elliptic"
@@ -41,6 +42,8 @@ type State struct {
 	peerCertificatesVerified   bool
 
 	replayDetector []replaydetector.ReplayDetector
+
+	handshakeLog *handshake.ServerHandshake
 }
 
 type serializedState struct {
@@ -111,7 +114,7 @@ func (s *State) deserialize(serialized serializedState) {
 	s.masterSecret = serialized.MasterSecret
 
 	// Set cipher suite
-	s.cipherSuite = cipherSuiteForID(CipherSuiteID(serialized.CipherSuiteID), nil)
+	s.cipherSuite = cipherSuiteForID(cs.ID(serialized.CipherSuiteID), nil)
 
 	atomic.StoreUint64(&s.localSequenceNumber[epoch], serialized.SequenceNumber)
 	s.srtpProtectionProfile = SRTPProtectionProfile(serialized.SRTPProtectionProfile)

@@ -11,11 +11,14 @@ type TypeValue uint16
 // TypeValue constants
 const (
 	ServerNameTypeValue                   TypeValue = 0
+	StatusRequest                         TypeValue = 5
 	SupportedEllipticCurvesTypeValue      TypeValue = 10
 	SupportedPointFormatsTypeValue        TypeValue = 11
 	SupportedSignatureAlgorithmsTypeValue TypeValue = 13
 	UseSRTPTypeValue                      TypeValue = 14
+	UseHeartbeat                          TypeValue = 15
 	UseExtendedMasterSecretTypeValue      TypeValue = 23
+	SessionTicket                         TypeValue = 35
 	RenegotiationInfoTypeValue            TypeValue = 65281
 )
 

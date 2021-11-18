@@ -1,45 +1,27 @@
 package dtls
 
 import (
+	"crypto/sha256"
+	"errors"
 	"fmt"
+	"github.com/pion/dtls/v2/internal/cipherspec"
+	"github.com/pion/dtls/v2/pkg/crypto/keyexchange"
+	"github.com/pion/dtls/v2/pkg/crypto/prf"
+	cs "github.com/pion/dtls/v2/pkg/protocol/ciphersuite"
 	"hash"
 
-	"github.com/pion/dtls/v2/internal/ciphersuite"
 	"github.com/pion/dtls/v2/pkg/crypto/clientcertificate"
 	"github.com/pion/dtls/v2/pkg/protocol/recordlayer"
 )
 
-// CipherSuiteID is an ID for our supported CipherSuites
-type CipherSuiteID = ciphersuite.ID
-
-// Supported Cipher Suites
-const (
-	// AES-128-CCM
-	TLS_ECDHE_ECDSA_WITH_AES_128_CCM   CipherSuiteID = ciphersuite.TLS_ECDHE_ECDSA_WITH_AES_128_CCM   //nolint:golint,stylecheck
-	TLS_ECDHE_ECDSA_WITH_AES_128_CCM_8 CipherSuiteID = ciphersuite.TLS_ECDHE_ECDSA_WITH_AES_128_CCM_8 //nolint:golint,stylecheck
-
-	// AES-128-GCM-SHA256
-	TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256 CipherSuiteID = ciphersuite.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256 //nolint:golint,stylecheck
-	TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256   CipherSuiteID = ciphersuite.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256   //nolint:golint,stylecheck
-
-	// AES-256-CBC-SHA
-	TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA CipherSuiteID = ciphersuite.TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA //nolint:golint,stylecheck
-	TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA   CipherSuiteID = ciphersuite.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA   //nolint:golint,stylecheck
-
-	TLS_PSK_WITH_AES_128_CCM        CipherSuiteID = ciphersuite.TLS_PSK_WITH_AES_128_CCM        //nolint:golint,stylecheck
-	TLS_PSK_WITH_AES_128_CCM_8      CipherSuiteID = ciphersuite.TLS_PSK_WITH_AES_128_CCM_8      //nolint:golint,stylecheck
-	TLS_PSK_WITH_AES_128_GCM_SHA256 CipherSuiteID = ciphersuite.TLS_PSK_WITH_AES_128_GCM_SHA256 //nolint:golint,stylecheck
-	TLS_PSK_WITH_AES_128_CBC_SHA256 CipherSuiteID = ciphersuite.TLS_PSK_WITH_AES_128_CBC_SHA256 //nolint:golint,stylecheck
-)
-
 // CipherSuiteAuthenticationType controls what authentication method is using during the handshake for a CipherSuite
-type CipherSuiteAuthenticationType = ciphersuite.AuthenticationType
+type CipherSuiteAuthenticationType = cipherspec.AuthenticationType
 
 // AuthenticationType Enums
 const (
-	CipherSuiteAuthenticationTypeCertificate  CipherSuiteAuthenticationType = ciphersuite.AuthenticationTypeCertificate
-	CipherSuiteAuthenticationTypePreSharedKey CipherSuiteAuthenticationType = ciphersuite.AuthenticationTypePreSharedKey
-	CipherSuiteAuthenticationTypeAnonymous    CipherSuiteAuthenticationType = ciphersuite.AuthenticationTypeAnonymous
+	CipherSuiteAuthenticationTypeCertificate  CipherSuiteAuthenticationType = cipherspec.AuthenticationTypeCertificate
+	CipherSuiteAuthenticationTypePreSharedKey CipherSuiteAuthenticationType = cipherspec.AuthenticationTypePreSharedKey
+	CipherSuiteAuthenticationTypeAnonymous    CipherSuiteAuthenticationType = cipherspec.AuthenticationTypeAnonymous
 )
 
 var _ = allCipherSuites() // Necessary until this function isn't only used by Go 1.14
@@ -50,13 +32,18 @@ type CipherSuite interface {
 	String() string
 
 	// ID of CipherSuite.
-	ID() CipherSuiteID
+	ID() cs.ID
 
 	// What type of Certificate does this CipherSuite use
 	CertificateType() clientcertificate.Type
 
+	KeyExchange() keyexchange.Type
+
 	// What Hash function is used during verification
 	HashFunc() func() hash.Hash
+
+	// What Hash function is used to construct HMAC for derivig master secret
+	PrfHashFunc() prf.HashFunc
 
 	// AuthenticationType controls what authentication method is using during the handshake
 	AuthenticationType() CipherSuiteAuthenticationType
@@ -74,8 +61,8 @@ type CipherSuite interface {
 //
 // Our implementation differs slightly in that it takes in a CiperSuiteID,
 // like the rest of our library, instead of a uint16 like crypto/tls.
-func CipherSuiteName(id CipherSuiteID) string {
-	suite := cipherSuiteForID(id, nil)
+func CipherSuiteName(id cs.ID) string {
+	suite := cipherspec.CipherSuiteForID(id)
 	if suite != nil {
 		return suite.String()
 	}
@@ -85,30 +72,11 @@ func CipherSuiteName(id CipherSuiteID) string {
 // Taken from https://www.iana.org/assignments/tls-parameters/tls-parameters.xml
 // A cipherSuite is a specific combination of key agreement, cipher and MAC
 // function.
-func cipherSuiteForID(id CipherSuiteID, customCiphers func() []CipherSuite) CipherSuite {
-	switch id { //nolint:exhaustive
-	case TLS_ECDHE_ECDSA_WITH_AES_128_CCM:
-		return ciphersuite.NewTLSEcdheEcdsaWithAes128Ccm()
-	case TLS_ECDHE_ECDSA_WITH_AES_128_CCM_8:
-		return ciphersuite.NewTLSEcdheEcdsaWithAes128Ccm8()
-	case TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256:
-		return &ciphersuite.TLSEcdheEcdsaWithAes128GcmSha256{}
-	case TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256:
-		return &ciphersuite.TLSEcdheRsaWithAes128GcmSha256{}
-	case TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA:
-		return &ciphersuite.TLSEcdheEcdsaWithAes256CbcSha{}
-	case TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA:
-		return &ciphersuite.TLSEcdheRsaWithAes256CbcSha{}
-	case TLS_PSK_WITH_AES_128_CCM:
-		return ciphersuite.NewTLSPskWithAes128Ccm()
-	case TLS_PSK_WITH_AES_128_CCM_8:
-		return ciphersuite.NewTLSPskWithAes128Ccm8()
-	case TLS_PSK_WITH_AES_128_GCM_SHA256:
-		return &ciphersuite.TLSPskWithAes128GcmSha256{}
-	case TLS_PSK_WITH_AES_128_CBC_SHA256:
-		return &ciphersuite.TLSPskWithAes128CbcSha256{}
+func cipherSuiteForID(id cs.ID, customCiphers func() []CipherSuite) CipherSuite {
+	suite := cipherspec.CipherSuiteForID(id)
+	if suite != nil {
+		return suite
 	}
-
 	if customCiphers != nil {
 		for _, c := range customCiphers() {
 			if c.ID() == id {
@@ -121,27 +89,151 @@ func cipherSuiteForID(id CipherSuiteID, customCiphers func() []CipherSuite) Ciph
 }
 
 // CipherSuites we support in order of preference
-func defaultCipherSuites() []CipherSuite {
-	return []CipherSuite{
-		&ciphersuite.TLSEcdheEcdsaWithAes128GcmSha256{},
-		&ciphersuite.TLSEcdheRsaWithAes128GcmSha256{},
-		&ciphersuite.TLSEcdheEcdsaWithAes256CbcSha{},
-		&ciphersuite.TLSEcdheRsaWithAes256CbcSha{},
+func defaultCipherSuites() []cs.ID {
+	return []cs.ID{
+		cs.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+		cs.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+		cs.TLS_ECDHE_ECDSA_WITH_AES_128_CCM,
+		cs.TLS_ECDHE_ECDSA_WITH_AES_128_CCM_8,
+		cs.TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256,
+		cs.TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA,
+		cs.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256,
+		cs.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA,
+		cs.TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA,
+		cs.TLS_ECDHE_ECDSA_WITH_AES_256_CCM,
+		cs.TLS_ECDHE_ECDSA_WITH_AES_256_CCM_8,
+		cs.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+		cs.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
+		cs.TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA384,
+		cs.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
+		cs.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384,
+		cs.TLS_RSA_WITH_AES_128_CBC_SHA,
+		cs.TLS_RSA_WITH_AES_256_CBC_SHA,
+		cs.TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA,
+		cs.TLS_RSA_WITH_3DES_EDE_CBC_SHA,
 	}
 }
 
-func allCipherSuites() []CipherSuite {
-	return []CipherSuite{
-		ciphersuite.NewTLSEcdheEcdsaWithAes128Ccm(),
-		ciphersuite.NewTLSEcdheEcdsaWithAes128Ccm8(),
-		&ciphersuite.TLSEcdheEcdsaWithAes128GcmSha256{},
-		&ciphersuite.TLSEcdheRsaWithAes128GcmSha256{},
-		&ciphersuite.TLSEcdheEcdsaWithAes256CbcSha{},
-		&ciphersuite.TLSEcdheRsaWithAes256CbcSha{},
-		ciphersuite.NewTLSPskWithAes128Ccm(),
-		ciphersuite.NewTLSPskWithAes128Ccm8(),
-		&ciphersuite.TLSPskWithAes128GcmSha256{},
+func allCipherSuites() []cs.ID {
+	return []cs.ID{
+		cs.TLS_ECDHE_ECDSA_WITH_AES_128_CCM,
+		cs.TLS_ECDHE_ECDSA_WITH_AES_128_CCM_8,
+		cs.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+		cs.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+		cs.TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA,
+		cs.TLS_ECDHE_ECDSA_WITH_AES_256_CCM,
+		cs.TLS_ECDHE_ECDSA_WITH_AES_256_CCM_8,
+		cs.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+		cs.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
+		cs.TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA384,
+		cs.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
+		cs.TLS_PSK_WITH_AES_128_CCM,
+		cs.TLS_PSK_WITH_AES_128_CCM_8,
+		cs.TLS_PSK_WITH_AES_128_GCM_SHA256,
+		cs.TLS_PSK_WITH_AES_128_CBC_SHA256,
 	}
+}
+
+var ThesisRecommended []cs.ID = []cs.ID{
+	cs.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
+	cs.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+	cs.TLS_DHE_RSA_WITH_AES_256_GCM_SHA384,
+	cs.TLS_DHE_DSS_WITH_AES_256_GCM_SHA384,
+	cs.TLS_ECDHE_ECDSA_WITH_AES_256_CCM,
+	cs.TLS_DHE_RSA_WITH_AES_256_CCM,
+	cs.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+	cs.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+	cs.TLS_DHE_RSA_WITH_AES_128_GCM_SHA256,
+	cs.TLS_DHE_DSS_WITH_AES_128_GCM_SHA256,
+	cs.TLS_ECDHE_ECDSA_WITH_AES_128_CCM,
+	cs.TLS_DHE_RSA_WITH_AES_128_CCM,
+	cs.TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA384,
+	cs.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384,
+	cs.TLS_DHE_RSA_WITH_AES_256_CBC_SHA256,
+	cs.TLS_DHE_DSS_WITH_AES_256_CBC_SHA256,
+	cs.TLS_DHE_RSA_WITH_AES_128_CBC_SHA256,
+	cs.TLS_DHE_DSS_WITH_AES_128_CBC_SHA256,
+	cs.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256,
+	cs.TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256,
+	cs.TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA,
+	// not explicitly recommended by BSI, but by NIST
+	cs.TLS_ECDHE_ECDSA_WITH_AES_256_CCM_8,
+	cs.TLS_DHE_RSA_WITH_AES_256_CCM_8,
+	cs.TLS_ECDHE_ECDSA_WITH_AES_128_CCM_8,
+	cs.TLS_DHE_RSA_WITH_AES_128_CCM_8,
+	cs.TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA,
+}
+
+var ThesisNoPFS []cs.ID = []cs.ID{
+	cs.TLS_ECDH_ECDSA_WITH_AES_256_GCM_SHA384,
+	cs.TLS_ECDH_RSA_WITH_AES_256_GCM_SHA384,
+	cs.TLS_DH_RSA_WITH_AES_256_GCM_SHA384,
+	cs.TLS_DH_DSS_WITH_AES_256_GCM_SHA384,
+	cs.TLS_ECDH_ECDSA_WITH_AES_128_GCM_SHA256,
+	cs.TLS_ECDH_RSA_WITH_AES_128_GCM_SHA256,
+	cs.TLS_DH_RSA_WITH_AES_128_GCM_SHA256,
+	cs.TLS_DH_DSS_WITH_AES_128_GCM_SHA256,
+	cs.TLS_ECDH_ECDSA_WITH_AES_256_CBC_SHA384,
+	cs.TLS_ECDH_RSA_WITH_AES_256_CBC_SHA384,
+	cs.TLS_DH_RSA_WITH_AES_256_CBC_SHA256,
+	cs.TLS_DH_DSS_WITH_AES_256_CBC_SHA256,
+	cs.TLS_ECDH_ECDSA_WITH_AES_128_CBC_SHA256,
+	cs.TLS_ECDH_RSA_WITH_AES_128_CBC_SHA256,
+	cs.TLS_DH_RSA_WITH_AES_128_CBC_SHA256,
+	cs.TLS_DH_DSS_WITH_AES_128_CBC_SHA256,
+}
+
+var ThesisInsecure []cs.ID = []cs.ID{
+	cs.TLS_NULL_WITH_NULL_NULL,
+	cs.TLS_RSA_WITH_NULL_MD5,
+	cs.TLS_RSA_WITH_NULL_SHA,
+	cs.TLS_RSA_WITH_NULL_SHA256,
+	cs.TLS_ECDH_ECDSA_WITH_NULL_SHA,
+	cs.TLS_ECDHE_ECDSA_WITH_NULL_SHA,
+	cs.TLS_ECDH_RSA_WITH_NULL_SHA,
+	cs.TLS_ECDHE_RSA_WITH_NULL_SHA,
+	cs.TLS_ECDH_ANON_WITH_NULL_SHA,
+	cs.TLS_RSA_EXPORT_WITH_DES40_CBC_SHA,
+	cs.TLS_DH_RSA_EXPORT_WITH_DES40_CBC_SHA,
+	cs.TLS_DH_DSS_EXPORT_WITH_DES40_CBC_SHA,
+	cs.TLS_DHE_DSS_EXPORT_WITH_DES40_CBC_SHA,
+	cs.TLS_DHE_RSA_EXPORT_WITH_DES40_CBC_SHA,
+	cs.TLS_DH_ANON_EXPORT_WITH_DES40_CBC_SHA,
+	cs.TLS_DHE_DSS_EXPORT1024_WITH_DES_CBC_SHA,
+	cs.TLS_RSA_EXPORT1024_WITH_DES_CBC_SHA,
+	cs.TLS_RSA_WITH_DES_CBC_SHA,
+	cs.TLS_DH_DSS_WITH_DES_CBC_SHA,
+	cs.TLS_DH_RSA_WITH_DES_CBC_SHA,
+	cs.TLS_DHE_DSS_WITH_DES_CBC_SHA,
+	cs.TLS_DHE_RSA_WITH_DES_CBC_SHA,
+	cs.TLS_DH_ANON_WITH_DES_CBC_SHA,
+	cs.TLS_DH_ANON_WITH_3DES_EDE_CBC_SHA,
+	cs.TLS_ECDH_ANON_WITH_3DES_EDE_CBC_SHA,
+	cs.TLS_DH_ANON_WITH_AES_128_CBC_SHA256,
+	cs.TLS_DH_ANON_WITH_AES_256_CBC_SHA256,
+	cs.TLS_DH_ANON_WITH_AES_128_GCM_SHA256,
+	cs.TLS_DH_ANON_WITH_AES_256_GCM_SHA384,
+	cs.TLS_ECDH_ANON_WITH_AES_128_CBC_SHA,
+	cs.TLS_ECDH_ANON_WITH_AES_256_CBC_SHA,
+	// 3DES might still be considered weakly secure?
+	//cs.TLS_RSA_WITH_3DES_EDE_CBC_SHA,
+	//cs.TLS_DH_DSS_WITH_3DES_EDE_CBC_SHA,
+	//cs.TLS_DH_RSA_WITH_3DES_EDE_CBC_SHA,
+	//cs.TLS_DHE_DSS_WITH_3DES_EDE_CBC_SHA,
+	//cs.TLS_DHE_RSA_WITH_3DES_EDE_CBC_SHA,
+	//cs.TLS_ECDH_ECDSA_WITH_3DES_EDE_CBC_SHA,
+	//cs.TLS_ECDHE_ECDSA_WITH_3DES_EDE_CBC_SHA,
+	//cs.TLS_ECDH_RSA_WITH_3DES_EDE_CBC_SHA,
+	//cs.TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA,
+
+	//?
+	//cs.TLS_RSA_WITH_AES_128_CBC_SHA,
+	//cs.TLS_RSA_WITH_AES_128_CBC_SHA256,
+	//cs.TLS_RSA_WITH_AES_256_CBC_SHA256,
+	//cs.TLS_RSA_WITH_AES_128_CCM,
+	//cs.TLS_RSA_WITH_AES_256_CCM,
+	//cs.TLS_RSA_WITH_AES_128_CCM_8,
+	//cs.TLS_RSA_WITH_AES_256_CCM_8,
 }
 
 func cipherSuiteIDs(cipherSuites []CipherSuite) []uint16 {
@@ -152,8 +244,8 @@ func cipherSuiteIDs(cipherSuites []CipherSuite) []uint16 {
 	return rtrn
 }
 
-func parseCipherSuites(userSelectedSuites []CipherSuiteID, customCipherSuites func() []CipherSuite, includeCertificateSuites, includePSKSuites bool) ([]CipherSuite, error) {
-	cipherSuitesForIDs := func(ids []CipherSuiteID) ([]CipherSuite, error) {
+func parseCipherSuites(userSelectedSuites []cs.ID, customCipherSuites func() []CipherSuite, includeCertificateSuites, includePSKSuites bool) ([]CipherSuite, error) {
+	cipherSuitesForIDs := func(ids []cs.ID) ([]CipherSuite, error) {
 		cipherSuites := []CipherSuite{}
 		for _, id := range ids {
 			c := cipherSuiteForID(id, nil)
@@ -176,7 +268,10 @@ func parseCipherSuites(userSelectedSuites []CipherSuiteID, customCipherSuites fu
 			return nil, err
 		}
 	} else {
-		cipherSuites = defaultCipherSuites()
+		cipherSuites, err = cipherSuitesForIDs(defaultCipherSuites())
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// Put CustomCipherSuites before ID selected suites
@@ -210,4 +305,64 @@ func parseCipherSuites(userSelectedSuites []CipherSuiteID, customCipherSuites fu
 	}
 
 	return cipherSuites[:i], nil
+}
+
+func parseAllCipherSuites(userSelectedSuites []cs.ID) ([]CipherSuite, error) {
+	cipherSuites := make([]CipherSuite, len(userSelectedSuites))
+	for i, id := range userSelectedSuites {
+		c := cipherSuiteForID(id, nil)
+		if c == nil {
+			c = &dummySuite{id}
+		}
+		cipherSuites[i] = c
+	}
+	return cipherSuites, nil
+}
+
+type dummySuite struct {
+	id cs.ID
+}
+
+func (d *dummySuite) String() string {
+	return d.id.String()
+}
+
+func (d *dummySuite) ID() cs.ID {
+	return d.id
+}
+
+func (d *dummySuite) CertificateType() clientcertificate.Type {
+	return 0
+}
+
+func (d *dummySuite) KeyExchange() keyexchange.Type {
+	return 0
+}
+
+func (d *dummySuite) HashFunc() func() hash.Hash {
+	return sha256.New
+}
+
+func (d *dummySuite) PrfHashFunc() prf.HashFunc {
+	return sha256.New
+}
+
+func (d *dummySuite) AuthenticationType() CipherSuiteAuthenticationType {
+	return 0
+}
+
+func (d *dummySuite) Init(masterSecret, clientRandom, serverRandom []byte, isClient bool) error {
+	return errors.New("suite not implemented")
+}
+
+func (d *dummySuite) IsInitialized() bool {
+	return false
+}
+
+func (d *dummySuite) Encrypt(pkt *recordlayer.RecordLayer, raw []byte) ([]byte, error) {
+	return nil, errors.New("suite not implemented")
+}
+
+func (d *dummySuite) Decrypt(in []byte) ([]byte, error) {
+	return nil, errors.New("suite not implemented")
 }

@@ -2,11 +2,11 @@ package dtls
 
 import (
 	"context"
+	"github.com/pion/dtls/v2/pkg/protocol/alert"
+	"github.com/pion/dtls/v2/pkg/protocol/extension"
 
 	"github.com/pion/dtls/v2/pkg/crypto/elliptic"
 	"github.com/pion/dtls/v2/pkg/protocol"
-	"github.com/pion/dtls/v2/pkg/protocol/alert"
-	"github.com/pion/dtls/v2/pkg/protocol/extension"
 	"github.com/pion/dtls/v2/pkg/protocol/handshake"
 	"github.com/pion/dtls/v2/pkg/protocol/recordlayer"
 )
@@ -32,6 +32,7 @@ func flight1Parse(ctx context.Context, c flightConn, state *State, cache *handsh
 	if h, ok := msgs[handshake.TypeHelloVerifyRequest].(*handshake.MessageHelloVerifyRequest); ok {
 		// DTLS 1.2 clients must not assume that the server will use the protocol version
 		// specified in HelloVerifyRequest message. RFC 6347 Section 4.2.1
+		state.handshakeLog.HelloVerifyRequest = h.MakeLog()
 		if !h.Version.Equal(protocol.Version1_0) && !h.Version.Equal(protocol.Version1_2) {
 			return 0, &alert.Alert{Level: alert.Fatal, Description: alert.ProtocolVersion}, errUnsupportedProtocolVersion
 		}
@@ -90,6 +91,16 @@ func flight1Generate(c flightConn, state *State, cache *handshakeCache, cfg *han
 		extensions = append(extensions, &extension.ServerName{ServerName: cfg.serverName})
 	}
 
+	ch := &handshake.MessageClientHello{
+		Version:            protocol.Version1_2,
+		Cookie:             state.cookie,
+		Random:             state.localRandom,
+		CipherSuiteIDs:     cipherSuiteIDs(cfg.localCipherSuites),
+		CompressionMethods: defaultCompressionMethods(),
+		Extensions:         extensions,
+	}
+	state.handshakeLog.ClientHello = ch.MakeLog()
+
 	return []*packet{
 		{
 			record: &recordlayer.RecordLayer{
@@ -97,14 +108,7 @@ func flight1Generate(c flightConn, state *State, cache *handshakeCache, cfg *han
 					Version: protocol.Version1_2,
 				},
 				Content: &handshake.Handshake{
-					Message: &handshake.MessageClientHello{
-						Version:            protocol.Version1_2,
-						Cookie:             state.cookie,
-						Random:             state.localRandom,
-						CipherSuiteIDs:     cipherSuiteIDs(cfg.localCipherSuites),
-						CompressionMethods: defaultCompressionMethods(),
-						Extensions:         extensions,
-					},
+					Message: ch,
 				},
 			},
 		},

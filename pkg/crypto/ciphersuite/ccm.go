@@ -1,7 +1,6 @@
 package ciphersuite
 
 import (
-	"crypto/aes"
 	"crypto/rand"
 	"encoding/binary"
 	"fmt"
@@ -21,6 +20,13 @@ const (
 	ccmNonceLength           = 12
 )
 
+type PRFLength int
+
+const (
+	PRFLength128 PRFLength = 16
+	PRFLength256 PRFLength = 32
+)
+
 // CCM Provides an API to Encrypt/Decrypt DTLS 1.2 Packets
 type CCM struct {
 	localCCM, remoteCCM         ccm.CCM
@@ -28,9 +34,9 @@ type CCM struct {
 	tagLen                      CCMTagLen
 }
 
-// NewCCM creates a DTLS GCM Cipher
-func NewCCM(tagLen CCMTagLen, localKey, localWriteIV, remoteKey, remoteWriteIV []byte) (*CCM, error) {
-	localBlock, err := aes.NewCipher(localKey)
+// NewCCM creates a DTLS CCM Cipher
+func NewCCM(newCipherFunc NewCipherFunc, tagLen CCMTagLen, localKey, localWriteIV, remoteKey, remoteWriteIV []byte) (*CCM, error) {
+	localBlock, err := newCipherFunc(localKey)
 	if err != nil {
 		return nil, err
 	}
@@ -39,7 +45,7 @@ func NewCCM(tagLen CCMTagLen, localKey, localWriteIV, remoteKey, remoteWriteIV [
 		return nil, err
 	}
 
-	remoteBlock, err := aes.NewCipher(remoteKey)
+	remoteBlock, err := newCipherFunc(remoteKey)
 	if err != nil {
 		return nil, err
 	}

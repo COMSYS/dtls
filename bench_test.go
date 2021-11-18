@@ -20,7 +20,7 @@ func TestSimpleReadWrite(t *testing.T) {
 	defer cancel()
 
 	ca, cb := dpipe.Pipe()
-	certificate, err := selfsign.GenerateSelfSigned()
+	certificate, err := selfsign.GenerateSelfSigned("ecdsa")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,7 +72,7 @@ func benchmarkConn(b *testing.B, n int64) {
 		ctx := context.Background()
 
 		ca, cb := dpipe.Pipe()
-		certificate, err := selfsign.GenerateSelfSigned()
+		certificate, err := selfsign.GenerateSelfSigned("ecdsa")
 		server := make(chan *Conn)
 		go func() {
 			s, sErr := testServer(ctx, cb, &Config{

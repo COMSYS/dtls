@@ -1,7 +1,6 @@
 package ciphersuite
 
 import ( //nolint:gci
-	"crypto/aes"
 	"crypto/cipher"
 	"crypto/hmac"
 	"crypto/rand"
@@ -28,13 +27,13 @@ type CBC struct {
 }
 
 // NewCBC creates a DTLS CBC Cipher
-func NewCBC(localKey, localWriteIV, localMac, remoteKey, remoteWriteIV, remoteMac []byte, h prf.HashFunc) (*CBC, error) {
-	writeBlock, err := aes.NewCipher(localKey)
+func NewCBC(newCipherFunc NewCipherFunc, localKey, localWriteIV, localMac, remoteKey, remoteWriteIV, remoteMac []byte, h prf.HashFunc) (*CBC, error) {
+	writeBlock, err := newCipherFunc(localKey)
 	if err != nil {
 		return nil, err
 	}
 
-	readBlock, err := aes.NewCipher(remoteKey)
+	readBlock, err := newCipherFunc(remoteKey)
 	if err != nil {
 		return nil, err
 	}

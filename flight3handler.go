@@ -2,11 +2,14 @@ package dtls
 
 import (
 	"context"
-
+	"fmt"
+	"github.com/pion/dtls/v2/internal/cipherspec"
 	"github.com/pion/dtls/v2/pkg/crypto/elliptic"
+	"github.com/pion/dtls/v2/pkg/crypto/keyexchange"
 	"github.com/pion/dtls/v2/pkg/crypto/prf"
 	"github.com/pion/dtls/v2/pkg/protocol"
 	"github.com/pion/dtls/v2/pkg/protocol/alert"
+	cs "github.com/pion/dtls/v2/pkg/protocol/ciphersuite"
 	"github.com/pion/dtls/v2/pkg/protocol/extension"
 	"github.com/pion/dtls/v2/pkg/protocol/handshake"
 	"github.com/pion/dtls/v2/pkg/protocol/recordlayer"
@@ -32,28 +35,16 @@ func flight3Parse(ctx context.Context, c flightConn, state *State, cache *handsh
 		}
 	}
 
-	if cfg.localPSKCallback != nil {
-		seq, msgs, ok = cache.fullPullMap(state.handshakeRecvSequence,
-			handshakeCachePullRule{handshake.TypeServerHello, cfg.initialEpoch, false, false},
-			handshakeCachePullRule{handshake.TypeServerKeyExchange, cfg.initialEpoch, false, true},
-			handshakeCachePullRule{handshake.TypeServerHelloDone, cfg.initialEpoch, false, false},
-		)
-	} else {
-		seq, msgs, ok = cache.fullPullMap(state.handshakeRecvSequence,
-			handshakeCachePullRule{handshake.TypeServerHello, cfg.initialEpoch, false, false},
-			handshakeCachePullRule{handshake.TypeCertificate, cfg.initialEpoch, false, true},
-			handshakeCachePullRule{handshake.TypeServerKeyExchange, cfg.initialEpoch, false, false},
-			handshakeCachePullRule{handshake.TypeCertificateRequest, cfg.initialEpoch, false, true},
-			handshakeCachePullRule{handshake.TypeServerHelloDone, cfg.initialEpoch, false, false},
-		)
-	}
+	seq, msgs, ok = cache.fullPullMap(state.handshakeRecvSequence,
+		handshakeCachePullRule{handshake.TypeServerHello, cfg.initialEpoch, false, false},
+	)
 	if !ok {
 		// Don't have enough messages. Keep reading
 		return 0, nil, nil
 	}
-	state.handshakeRecvSequence = seq
 
 	if h, ok := msgs[handshake.TypeServerHello].(*handshake.MessageServerHello); ok {
+		state.handshakeLog.ServerHello = h.MakeLog()
 		if !h.Version.Equal(protocol.Version1_2) {
 			return 0, &alert.Alert{Level: alert.Fatal, Description: alert.ProtocolVersion}, errUnsupportedProtocolVersion
 		}
@@ -78,7 +69,7 @@ func flight3Parse(ctx context.Context, c flightConn, state *State, cache *handsh
 			return 0, &alert.Alert{Level: alert.Fatal, Description: alert.InsufficientSecurity}, errRequestedButNoSRTPExtension
 		}
 
-		remoteCipherSuite := cipherSuiteForID(CipherSuiteID(*h.CipherSuiteID), cfg.customCipherSuites)
+		remoteCipherSuite := cipherSuiteForID(cs.ID(*h.CipherSuiteID), cfg.customCipherSuites)
 		if remoteCipherSuite == nil {
 			return 0, &alert.Alert{Level: alert.Fatal, Description: alert.InsufficientSecurity}, errCipherSuiteNoIntersection
 		}
@@ -93,20 +84,46 @@ func flight3Parse(ctx context.Context, c flightConn, state *State, cache *handsh
 		cfg.log.Tracef("[handshake] use cipher suite: %s", selectedCipherSuite.String())
 	}
 
+	expectCertificate := state.cipherSuite.AuthenticationType() == cipherspec.AuthenticationTypeCertificate
+	expectServerKeyExchange := state.cipherSuite.KeyExchange().RequiresServerKeyExchange()
+	if cfg.localPSKCallback != nil {
+		seq, msgs, ok = cache.fullPullMap(state.handshakeRecvSequence,
+			handshakeCachePullRule{handshake.TypeServerHello, cfg.initialEpoch, false, false},
+			handshakeCachePullRule{handshake.TypeServerKeyExchange, cfg.initialEpoch, false, true},
+			handshakeCachePullRule{handshake.TypeServerHelloDone, cfg.initialEpoch, false, false},
+		)
+	} else {
+		seq, msgs, ok = cache.fullPullMap(state.handshakeRecvSequence,
+			handshakeCachePullRule{handshake.TypeServerHello, cfg.initialEpoch, false, false},
+			handshakeCachePullRule{handshake.TypeCertificate, cfg.initialEpoch, false, !expectCertificate},
+			handshakeCachePullRule{handshake.TypeServerKeyExchange, cfg.initialEpoch, false, !expectServerKeyExchange},
+			handshakeCachePullRule{handshake.TypeCertificateRequest, cfg.initialEpoch, false, true},
+			handshakeCachePullRule{handshake.TypeServerHelloDone, cfg.initialEpoch, false, false},
+		)
+	}
+	if !ok {
+		// Don't have enough messages. Keep reading
+		return 0, nil, nil
+	}
+	state.handshakeRecvSequence = seq
+
 	if h, ok := msgs[handshake.TypeCertificate].(*handshake.MessageCertificate); ok {
+		state.handshakeLog.ServerCertificates = h.MakeLog()
 		state.PeerCertificates = h.Certificate
 	} else if state.cipherSuite.AuthenticationType() == CipherSuiteAuthenticationTypeCertificate {
 		return 0, &alert.Alert{Level: alert.Fatal, Description: alert.NoCertificate}, errInvalidCertificate
 	}
 
 	if h, ok := msgs[handshake.TypeServerKeyExchange].(*handshake.MessageServerKeyExchange); ok {
+		state.handshakeLog.ServerKeyExchange = h.MakeLog()
 		alertPtr, err := handleServerKeyExchange(c, state, cfg, h)
 		if err != nil {
 			return 0, alertPtr, err
 		}
 	}
 
-	if _, ok := msgs[handshake.TypeCertificateRequest].(*handshake.MessageCertificateRequest); ok {
+	if h, ok := msgs[handshake.TypeCertificateRequest].(*handshake.MessageCertificateRequest); ok {
+		state.handshakeLog.CertificateRequest = h.MakeLog()
 		state.remoteRequestedCertificate = true
 	}
 
@@ -115,14 +132,8 @@ func flight3Parse(ctx context.Context, c flightConn, state *State, cache *handsh
 
 func handleServerKeyExchange(_ flightConn, state *State, cfg *handshakeConfig, h *handshake.MessageServerKeyExchange) (*alert.Alert, error) {
 	var err error
-	if cfg.localPSKCallback != nil {
-		var psk []byte
-		if psk, err = cfg.localPSKCallback(h.IdentityHint); err != nil {
-			return &alert.Alert{Level: alert.Fatal, Description: alert.InternalError}, err
-		}
-		state.IdentityHint = h.IdentityHint
-		state.preMasterSecret = prf.PSKPreMasterSecret(psk)
-	} else {
+	switch state.cipherSuite.KeyExchange() {
+	case keyexchange.ECDHE_ECDSA, keyexchange.ECDHE_RSA:
 		if state.localKeypair, err = elliptic.GenerateKeypair(h.NamedCurve); err != nil {
 			return &alert.Alert{Level: alert.Fatal, Description: alert.InternalError}, err
 		}
@@ -130,8 +141,19 @@ func handleServerKeyExchange(_ flightConn, state *State, cfg *handshakeConfig, h
 		if state.preMasterSecret, err = prf.PreMasterSecret(h.PublicKey, state.localKeypair.PrivateKey, state.localKeypair.Curve); err != nil {
 			return &alert.Alert{Level: alert.Fatal, Description: alert.InternalError}, err
 		}
+	case keyexchange.PSK:
+		var psk []byte
+		if psk, err = cfg.localPSKCallback(h.IdentityHint); err != nil {
+			return &alert.Alert{Level: alert.Fatal, Description: alert.InternalError}, err
+		}
+		state.IdentityHint = h.IdentityHint
+		state.preMasterSecret = prf.PSKPreMasterSecret(psk)
+	case keyexchange.RSA:
+		// nothing to do here, send premastersecret with client-key-exchange message
+	default:
+		return &alert.Alert{Level: alert.Fatal, Description: alert.InternalError},
+			fmt.Errorf("unsupported key echange: %s", state.cipherSuite.KeyExchange().String())
 	}
-
 	return nil, nil
 }
 
@@ -172,6 +194,17 @@ func flight3Generate(c flightConn, state *State, cache *handshakeCache, cfg *han
 		extensions = append(extensions, &extension.ServerName{ServerName: cfg.serverName})
 	}
 
+	ch := &handshake.MessageClientHello{
+		Version:            protocol.Version1_2,
+		Cookie:             state.cookie,
+		Random:             state.localRandom,
+		CipherSuiteIDs:     cipherSuiteIDs(cfg.localCipherSuites),
+		CompressionMethods: defaultCompressionMethods(),
+		Extensions:         extensions,
+	}
+
+	state.handshakeLog.ClientHello = ch.MakeLog()
+
 	return []*packet{
 		{
 			record: &recordlayer.RecordLayer{
@@ -179,14 +212,7 @@ func flight3Generate(c flightConn, state *State, cache *handshakeCache, cfg *han
 					Version: protocol.Version1_2,
 				},
 				Content: &handshake.Handshake{
-					Message: &handshake.MessageClientHello{
-						Version:            protocol.Version1_2,
-						Cookie:             state.cookie,
-						Random:             state.localRandom,
-						CipherSuiteIDs:     cipherSuiteIDs(cfg.localCipherSuites),
-						CompressionMethods: defaultCompressionMethods(),
-						Extensions:         extensions,
-					},
+					Message: ch,
 				},
 			},
 		},

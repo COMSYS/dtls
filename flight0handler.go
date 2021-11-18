@@ -3,6 +3,7 @@ package dtls
 import (
 	"context"
 	"crypto/rand"
+	cs "github.com/pion/dtls/v2/pkg/protocol/ciphersuite"
 
 	"github.com/pion/dtls/v2/pkg/crypto/elliptic"
 	"github.com/pion/dtls/v2/pkg/protocol"
@@ -28,6 +29,8 @@ func flight0Parse(ctx context.Context, c flightConn, state *State, cache *handsh
 		return 0, &alert.Alert{Level: alert.Fatal, Description: alert.InternalError}, nil
 	}
 
+	state.handshakeLog.ClientHello = clientHello.MakeLog()
+
 	if !clientHello.Version.Equal(protocol.Version1_2) {
 		return 0, &alert.Alert{Level: alert.Fatal, Description: alert.ProtocolVersion}, errUnsupportedProtocolVersion
 	}
@@ -36,7 +39,7 @@ func flight0Parse(ctx context.Context, c flightConn, state *State, cache *handsh
 
 	cipherSuites := []CipherSuite{}
 	for _, id := range clientHello.CipherSuiteIDs {
-		if c := cipherSuiteForID(CipherSuiteID(id), cfg.customCipherSuites); c != nil {
+		if c := cipherSuiteForID(cs.ID(id), cfg.customCipherSuites); c != nil {
 			cipherSuites = append(cipherSuites, c)
 		}
 	}

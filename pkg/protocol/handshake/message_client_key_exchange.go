@@ -12,8 +12,9 @@ import (
 //
 // https://tools.ietf.org/html/rfc5246#section-7.4.7
 type MessageClientKeyExchange struct {
-	IdentityHint []byte
-	PublicKey    []byte
+	IdentityHint             []byte
+	PublicKey                []byte
+	EncryptedPreMasterSecret []byte
 }
 
 // Type returns the Handshake Type
@@ -24,6 +25,10 @@ func (m MessageClientKeyExchange) Type() Type {
 // Marshal encodes the Handshake
 func (m *MessageClientKeyExchange) Marshal() ([]byte, error) {
 	switch {
+	case m.EncryptedPreMasterSecret != nil:
+		out := append([]byte{0x00, 0x00}, m.EncryptedPreMasterSecret...)
+		binary.BigEndian.PutUint16(out, uint16(len(out)-2))
+		return out, nil
 	case (m.IdentityHint != nil && m.PublicKey != nil) || (m.IdentityHint == nil && m.PublicKey == nil):
 		return nil, errInvalidClientKeyExchange
 	case m.PublicKey != nil:
@@ -49,6 +54,11 @@ func (m *MessageClientKeyExchange) Unmarshal(data []byte) error {
 
 	if publicKeyLength := int(data[0]); len(data) != publicKeyLength+1 {
 		return errBufferTooSmall
+	}
+
+	if len(data) == 48 {
+		m.EncryptedPreMasterSecret = data
+		return nil
 	}
 
 	m.PublicKey = append([]byte{}, data[1:]...)

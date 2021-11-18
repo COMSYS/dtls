@@ -17,7 +17,7 @@ func TestValidateConfig(t *testing.T) {
 	}
 
 	// PSK and Certificate, valid cipher suites
-	cert, err := selfsign.GenerateSelfSigned()
+	cert, err := selfsign.GenerateSelfSigned("ecdsa")
 	if err != nil {
 		t.Fatalf("TestValidateConfig: Config validation error(%v), self signed certificate not generated", err)
 		return

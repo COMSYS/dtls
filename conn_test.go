@@ -8,6 +8,7 @@ import (
 	"crypto/x509"
 	"errors"
 	"fmt"
+	"github.com/pion/dtls"
 	"io"
 	"net"
 	"sync"
@@ -15,7 +16,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pion/dtls/v2/internal/ciphersuite"
 	"github.com/pion/dtls/v2/internal/net/dpipe"
 	"github.com/pion/dtls/v2/pkg/crypto/elliptic"
 	"github.com/pion/dtls/v2/pkg/crypto/hash"
@@ -216,7 +216,7 @@ func TestSequenceNumberOverflow(t *testing.T) {
 						Message: &handshake.MessageClientHello{
 							Version:            protocol.Version1_2,
 							Cookie:             make([]byte, 64),
-							CipherSuiteIDs:     cipherSuiteIDs(defaultCipherSuites()),
+							CipherSuiteIDs:     convertCipherSuiteIDs(defaultCipherSuites()),
 							CompressionMethods: defaultCompressionMethods(),
 						},
 					},
@@ -274,7 +274,7 @@ func pipeConn(ca, cb net.Conn) (*Conn, *Conn, error) {
 
 func testClient(ctx context.Context, c net.Conn, cfg *Config, generateCertificate bool) (*Conn, error) {
 	if generateCertificate {
-		clientCert, err := selfsign.GenerateSelfSigned()
+		clientCert, err := selfsign.GenerateSelfSigned("ecdsa")
 		if err != nil {
 			return nil, err
 		}
@@ -286,7 +286,7 @@ func testClient(ctx context.Context, c net.Conn, cfg *Config, generateCertificat
 
 func testServer(ctx context.Context, c net.Conn, cfg *Config, generateCertificate bool) (*Conn, error) {
 	if generateCertificate {
-		serverCert, err := selfsign.GenerateSelfSigned()
+		serverCert, err := selfsign.GenerateSelfSigned("ecdsa")
 		if err != nil {
 			return nil, err
 		}
@@ -375,7 +375,7 @@ func TestExportKeyingMaterial(t *testing.T) {
 			localRandom:         handshake.Random{GMTUnixTime: time.Unix(500, 0), RandomBytes: rand},
 			remoteRandom:        handshake.Random{GMTUnixTime: time.Unix(1000, 0), RandomBytes: rand},
 			localSequenceNumber: []uint64{0, 0},
-			cipherSuite:         &ciphersuite.TLSEcdheEcdsaWithAes128GcmSha256{},
+			cipherSuite:         cipherSuiteForID(TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256, nil),
 		},
 	}
 	c.setLocalEpoch(0)
@@ -710,7 +710,7 @@ func TestClientCertificate(t *testing.T) {
 	report := test.CheckRoutines(t)
 	defer report()
 
-	srvCert, err := selfsign.GenerateSelfSigned()
+	srvCert, err := selfsign.GenerateSelfSigned("ecdsa")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -721,7 +721,7 @@ func TestClientCertificate(t *testing.T) {
 	}
 	srvCAPool.AddCert(srvCertificate)
 
-	cert, err := selfsign.GenerateSelfSigned()
+	cert, err := selfsign.GenerateSelfSigned("ecdsa")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1035,7 +1035,7 @@ func TestServerCertificate(t *testing.T) {
 	report := test.CheckRoutines(t)
 	defer report()
 
-	cert, err := selfsign.GenerateSelfSigned()
+	cert, err := selfsign.GenerateSelfSigned("ecdsa")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1162,10 +1162,10 @@ func TestCipherSuiteConfiguration(t *testing.T) {
 		},
 		{
 			Name:               "Invalid CipherSuite",
-			ClientCipherSuites: []CipherSuiteID{0x00},
-			ServerCipherSuites: []CipherSuiteID{0x00},
-			WantClientError:    &invalidCipherSuite{0x00},
-			WantServerError:    &invalidCipherSuite{0x00},
+			ClientCipherSuites: []CipherSuiteID{0xFEDC},
+			ServerCipherSuites: []CipherSuiteID{0xFEDC},
+			WantClientError:    &invalidCipherSuite{0xFEDC},
+			WantServerError:    &invalidCipherSuite{0xFEDC},
 		},
 		{
 			Name:                    "Valid CipherSuites specified",
@@ -1429,8 +1429,8 @@ func TestServerTimeout(t *testing.T) {
 	random := handshake.Random{GMTUnixTime: time.Unix(500, 0), RandomBytes: rand}
 
 	cipherSuites := []CipherSuite{
-		&ciphersuite.TLSEcdheEcdsaWithAes128GcmSha256{},
-		&ciphersuite.TLSEcdheRsaWithAes128GcmSha256{},
+		cipherSuiteForID(TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256, nil),
+		cipherSuiteForID(TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256, nil),
 	}
 
 	extensions := []extension.Extension{
@@ -1580,7 +1580,7 @@ func TestProtocolVersionValidation(t *testing.T) {
 								Version:            protocol.Version{Major: 0xfe, Minor: 0xff}, // try to downgrade
 								Cookie:             cookie,
 								Random:             random,
-								CipherSuiteIDs:     []uint16{uint16((&ciphersuite.TLSEcdheEcdsaWithAes128GcmSha256{}).ID())},
+								CipherSuiteIDs:     []uint16{uint16(dtls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256)},
 								CompressionMethods: defaultCompressionMethods(),
 							},
 						},
@@ -1598,7 +1598,7 @@ func TestProtocolVersionValidation(t *testing.T) {
 								Version:            protocol.Version1_2,
 								Cookie:             cookie,
 								Random:             random,
-								CipherSuiteIDs:     []uint16{uint16((&ciphersuite.TLSEcdheEcdsaWithAes128GcmSha256{}).ID())},
+								CipherSuiteIDs:     []uint16{uint16(dtls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256)},
 								CompressionMethods: defaultCompressionMethods(),
 							},
 						},
@@ -1616,7 +1616,7 @@ func TestProtocolVersionValidation(t *testing.T) {
 								Version:            protocol.Version{Major: 0xfe, Minor: 0xff}, // try to downgrade
 								Cookie:             cookie,
 								Random:             random,
-								CipherSuiteIDs:     []uint16{uint16((&ciphersuite.TLSEcdheEcdsaWithAes128GcmSha256{}).ID())},
+								CipherSuiteIDs:     []uint16{uint16(dtls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256)},
 								CompressionMethods: defaultCompressionMethods(),
 							},
 						},
@@ -1951,7 +1951,7 @@ func TestRenegotationInfo(t *testing.T) {
 						Message: &handshake.MessageClientHello{
 							Version:            protocol.Version1_2,
 							Cookie:             cookie,
-							CipherSuiteIDs:     cipherSuiteIDs(defaultCipherSuites()),
+							CipherSuiteIDs:     convertCipherSuiteIDs(defaultCipherSuites()),
 							CompressionMethods: defaultCompressionMethods(),
 							Extensions:         extensions,
 						},
@@ -2023,4 +2023,12 @@ func TestRenegotationInfo(t *testing.T) {
 			}
 		})
 	}
+}
+
+func convertCipherSuiteIDs(suites []CipherSuiteID) []uint16 {
+	ret := make([]uint16, len(suites))
+	for i, s := range suites {
+		ret[i] = uint16(s)
+	}
+	return ret
 }

@@ -75,6 +75,8 @@ type Conn struct {
 	fsm *handshakeFSM
 
 	replayProtectionWindow uint
+
+	handshakeLog *handshake.ServerHandshake
 }
 
 func createConn(ctx context.Context, nextConn net.Conn, config *Config, isClient bool, initialState *State) (*Conn, error) {
@@ -87,7 +89,12 @@ func createConn(ctx context.Context, nextConn net.Conn, config *Config, isClient
 		return nil, errNilNextConn
 	}
 
-	cipherSuites, err := parseCipherSuites(config.CipherSuites, config.CustomCipherSuites, config.PSK == nil || len(config.Certificates) > 0, config.PSK != nil)
+	var cipherSuites []CipherSuite
+	if !config.ForceSuites {
+		cipherSuites, err = parseCipherSuites(config.CipherSuites, config.CustomCipherSuites, config.PSK == nil || len(config.Certificates) > 0, config.PSK != nil)
+	} else {
+		cipherSuites, err = parseAllCipherSuites(config.CipherSuites)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -119,6 +126,8 @@ func createConn(ctx context.Context, nextConn net.Conn, config *Config, isClient
 		replayProtectionWindow = defaultReplayProtectionWindow
 	}
 
+	handshakeLog := &handshake.ServerHandshake{}
+
 	c := &Conn{
 		nextConn:                connctx.New(nextConn),
 		fragmentBuffer:          newFragmentBuffer(),
@@ -138,8 +147,11 @@ func createConn(ctx context.Context, nextConn net.Conn, config *Config, isClient
 
 		replayProtectionWindow: uint(replayProtectionWindow),
 
+		handshakeLog: handshakeLog,
+
 		state: State{
-			isClient: isClient,
+			isClient:     isClient,
+			handshakeLog: handshakeLog,
 		},
 	}
 
@@ -177,6 +189,7 @@ func createConn(ctx context.Context, nextConn net.Conn, config *Config, isClient
 		retransmitInterval:          workerInterval,
 		log:                         logger,
 		initialEpoch:                0,
+		keyLogWriter:                config.KeyLogWriter,
 	}
 
 	var initialFlight flightVal
@@ -201,7 +214,7 @@ func createConn(ctx context.Context, nextConn net.Conn, config *Config, isClient
 	}
 	// Do handshake
 	if err := c.handshake(ctx, hsCfg, initialFlight, initialFSMState); err != nil {
-		return nil, err
+		return c, err
 	}
 
 	c.log.Trace("Handshake Completed")
@@ -337,9 +350,12 @@ func (c *Conn) Write(p []byte) (int, error) {
 
 // Close closes the connection.
 func (c *Conn) Close() error {
-	err := c.close(true)
-	c.handshakeLoopsFinished.Wait()
-	return err
+	if c != nil {
+		err := c.close(true)
+		c.handshakeLoopsFinished.Wait()
+		return err
+	}
+	return nil
 }
 
 // ConnectionState returns basic DTLS details about the connection.
@@ -974,4 +990,8 @@ func (c *Conn) SetWriteDeadline(t time.Time) error {
 	c.writeDeadline.Set(t)
 	// Write deadline is also fully managed by this layer.
 	return nil
+}
+
+func (c *Conn) GetHandshakeLog() *handshake.ServerHandshake {
+	return c.handshakeLog
 }

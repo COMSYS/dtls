@@ -32,6 +32,13 @@ func Algorithms() []Algorithm {
 		{hash.SHA384, signature.RSA},
 		{hash.SHA512, signature.RSA},
 		{hash.Ed25519, signature.Ed25519},
+		{hash.SHA1, signature.ECDSA},
+		{hash.SHA1, signature.RSA},
+		{hash.MD5, signature.ECDSA},
+		{hash.MD5, signature.RSA},
+		{hash.None, signature.Anonymous},
+		{hash.None, signature.RSA},
+		{hash.None, signature.ECDSA},
 	}
 }
 

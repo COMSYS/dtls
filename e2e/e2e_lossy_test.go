@@ -30,12 +30,12 @@ func TestPionE2ELossy(t *testing.T) {
 		err      error
 	}
 
-	serverCert, err := selfsign.GenerateSelfSigned()
+	serverCert, err := selfsign.GenerateSelfSigned("ecdsa")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	clientCert, err := selfsign.GenerateSelfSigned()
+	clientCert, err := selfsign.GenerateSelfSigned("ecdsa")
 	if err != nil {
 		t.Fatal(err)
 	}

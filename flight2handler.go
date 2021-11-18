@@ -28,6 +28,8 @@ func flight2Parse(ctx context.Context, c flightConn, state *State, cache *handsh
 		return 0, &alert.Alert{Level: alert.Fatal, Description: alert.InternalError}, nil
 	}
 
+	state.handshakeLog.ClientHello = clientHello.MakeLog()
+
 	if !clientHello.Version.Equal(protocol.Version1_2) {
 		return 0, &alert.Alert{Level: alert.Fatal, Description: alert.ProtocolVersion}, errUnsupportedProtocolVersion
 	}
@@ -43,6 +45,13 @@ func flight2Parse(ctx context.Context, c flightConn, state *State, cache *handsh
 
 func flight2Generate(c flightConn, state *State, cache *handshakeCache, cfg *handshakeConfig) ([]*packet, *alert.Alert, error) {
 	state.handshakeSendSequence = 0
+
+	hvr := &handshake.MessageHelloVerifyRequest{
+		Version: protocol.Version1_2,
+		Cookie:  state.cookie,
+	}
+	state.handshakeLog.HelloVerifyRequest = hvr.MakeLog()
+
 	return []*packet{
 		{
 			record: &recordlayer.RecordLayer{
@@ -50,10 +59,7 @@ func flight2Generate(c flightConn, state *State, cache *handshakeCache, cfg *han
 					Version: protocol.Version1_2,
 				},
 				Content: &handshake.Handshake{
-					Message: &handshake.MessageHelloVerifyRequest{
-						Version: protocol.Version1_2,
-						Cookie:  state.cookie,
-					},
+					Message: hvr,
 				},
 			},
 		},

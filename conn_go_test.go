@@ -38,7 +38,7 @@ func TestContextConfig(t *testing.T) {
 	}()
 	addr := listen.LocalAddr().(*net.UDPAddr)
 
-	cert, err := selfsign.GenerateSelfSigned()
+	cert, err := selfsign.GenerateSelfSigned("ecdsa")
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}

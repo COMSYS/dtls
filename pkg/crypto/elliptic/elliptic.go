@@ -4,6 +4,7 @@ package elliptic
 import (
 	"crypto/elliptic"
 	"crypto/rand"
+	"encoding/json"
 	"errors"
 
 	"golang.org/x/crypto/curve25519"
@@ -96,4 +97,18 @@ func ellipticCurveKeypair(nc Curve, c1, c2 elliptic.Curve) (*Keypair, error) {
 	}
 
 	return &Keypair{nc, elliptic.Marshal(c2, x, y), privateKey}, nil
+}
+
+var namedCurveToName = map[Curve]string{
+	P256:   "P256",
+	P384:   "P384",
+	X25519: "X25519",
+}
+
+func (c Curve) MarshalJSON() ([]byte, error) {
+	name, ok := namedCurveToName[c]
+	if !ok {
+		return json.Marshal(uint16(c))
+	}
+	return json.Marshal(name)
 }

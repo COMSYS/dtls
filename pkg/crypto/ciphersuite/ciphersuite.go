@@ -2,12 +2,14 @@
 package ciphersuite
 
 import (
+	"crypto/cipher"
 	"encoding/binary"
 	"errors"
-
 	"github.com/pion/dtls/v2/pkg/protocol"
 	"github.com/pion/dtls/v2/pkg/protocol/recordlayer"
 )
+
+type NewCipherFunc func([]byte) (cipher.Block, error)
 
 var (
 	errNotEnoughRoomForNonce = &protocol.InternalError{Err: errors.New("buffer not long enough to contain nonce")} //nolint:goerr113

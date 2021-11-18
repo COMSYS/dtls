@@ -40,7 +40,7 @@ func testPionE2ESimpleED25519(t *testing.T, server, client func(*comm)) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			cert, err := selfsign.SelfSign(key)
+			cert, err := selfsign.SelfSign(key.Public(), key)
 			if err != nil {
 				t.Fatal(err)
 			}

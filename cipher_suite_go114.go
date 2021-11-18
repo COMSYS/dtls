@@ -4,6 +4,7 @@ package dtls
 
 import (
 	"crypto/tls"
+	cs "github.com/pion/dtls/v2/pkg/protocol/ciphersuite"
 )
 
 // VersionDTLS12 is the DTLS version in the same style as
@@ -11,9 +12,9 @@ import (
 const VersionDTLS12 = 0xfefd
 
 // Convert from our cipherSuite interface to a tls.CipherSuite struct
-func toTLSCipherSuite(c CipherSuite) *tls.CipherSuite {
+func toTLSCipherSuite(c cs.ID) *tls.CipherSuite {
 	return &tls.CipherSuite{
-		ID:                uint16(c.ID()),
+		ID:                uint16(c),
 		Name:              c.String(),
 		SupportedVersions: []uint16{VersionDTLS12},
 		Insecure:          false,

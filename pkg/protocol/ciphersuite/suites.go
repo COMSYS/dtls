@@ -1,0 +1,282 @@
+package ciphersuite
+
+import (
+	"encoding/json"
+	"fmt"
+)
+
+type ID uint16
+
+// Supported Cipher Suites
+const (
+	TLS_ECDHE_ECDSA_WITH_AES_128_CCM        ID = 0xc0ac //nolint:golint,stylecheck
+	TLS_ECDHE_ECDSA_WITH_AES_128_CCM_8      ID = 0xc0ae //nolint:golint,stylecheck
+	TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256 ID = 0xc02b //nolint:golint,stylecheck
+	TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256   ID = 0xc02f //nolint:golint,stylecheck
+	TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA    ID = 0xc00a //nolint:golint,stylecheck
+	TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA      ID = 0xc014 //nolint:golint,stylecheck
+	TLS_PSK_WITH_AES_128_CCM                ID = 0xc0a4 //nolint:golint,stylecheck
+	TLS_PSK_WITH_AES_128_CCM_8              ID = 0xc0a8 //nolint:golint,stylecheck
+	TLS_PSK_WITH_AES_128_GCM_SHA256         ID = 0x00a8 //nolint:golint,stylecheck
+	TLS_PSK_WITH_AES_128_CBC_SHA256         ID = 0x00ae //nolint:golint,stylecheck
+	TLS_NULL_WITH_NULL_NULL                 ID = 0x0000 //nolint:golint,stylecheck
+	TLS_RSA_WITH_NULL_MD5                   ID = 0x0001 //nolint:golint,stylecheck
+	TLS_RSA_WITH_NULL_SHA                   ID = 0x0002 //nolint:golint,stylecheck
+	TLS_RSA_EXPORT_WITH_RC2_CBC_40_MD5      ID = 0x0006 //nolint:golint,stylecheck
+	TLS_RSA_EXPORT_WITH_DES40_CBC_SHA       ID = 0x0008 //nolint:golint,stylecheck
+	TLS_RSA_WITH_DES_CBC_SHA                ID = 0x0009 //nolint:golint,stylecheck
+	TLS_RSA_WITH_3DES_EDE_CBC_SHA           ID = 0x000A //nolint:golint,stylecheck
+	TLS_DH_DSS_EXPORT_WITH_DES40_CBC_SHA    ID = 0x000B //nolint:golint,stylecheck
+	TLS_DH_DSS_WITH_DES_CBC_SHA             ID = 0x000C //nolint:golint,stylecheck
+	TLS_DH_RSA_EXPORT_WITH_DES40_CBC_SHA    ID = 0x000E //nolint:golint,stylecheck
+	TLS_DH_RSA_WITH_DES_CBC_SHA             ID = 0x000F //nolint:golint,stylecheck
+	TLS_DHE_DSS_EXPORT_WITH_DES40_CBC_SHA   ID = 0x0011 //nolint:golint,stylecheck
+	TLS_DHE_DSS_WITH_DES_CBC_SHA            ID = 0x0012 //nolint:golint,stylecheck
+	TLS_DHE_RSA_EXPORT_WITH_DES40_CBC_SHA   ID = 0x0014 //nolint:golint,stylecheck
+	TLS_DHE_RSA_WITH_DES_CBC_SHA            ID = 0x0015 //nolint:golint,stylecheck
+	TLS_DH_ANON_EXPORT_WITH_DES40_CBC_SHA   ID = 0x0019 //nolint:golint,stylecheck
+	TLS_DH_ANON_WITH_DES_CBC_SHA            ID = 0x001A //nolint:golint,stylecheck
+	TLS_DH_ANON_WITH_3DES_EDE_CBC_SHA       ID = 0x001B //nolint:golint,stylecheck
+	TLS_RSA_WITH_AES_128_CBC_SHA            ID = 0x002F //nolint:golint,stylecheck
+	TLS_RSA_WITH_AES_256_CBC_SHA            ID = 0x0035 //nolint:golint,stylecheck
+	TLS_RSA_WITH_NULL_SHA256                ID = 0x003B //nolint:golint,stylecheck
+	TLS_DH_DSS_WITH_AES_128_CBC_SHA256      ID = 0x003E //nolint:golint,stylecheck
+	TLS_DH_RSA_WITH_AES_128_CBC_SHA256      ID = 0x003F //nolint:golint,stylecheck
+	TLS_DHE_DSS_WITH_AES_128_CBC_SHA256     ID = 0x0040 //nolint:golint,stylecheck
+	TLS_DHE_RSA_WITH_AES_128_CBC_SHA256     ID = 0x0067 //nolint:golint,stylecheck
+	TLS_DH_DSS_WITH_AES_256_CBC_SHA256      ID = 0x0068 //nolint:golint,stylecheck
+	TLS_DH_RSA_WITH_AES_256_CBC_SHA256      ID = 0x0069 //nolint:golint,stylecheck
+	TLS_DHE_DSS_WITH_AES_256_CBC_SHA256     ID = 0x006A //nolint:golint,stylecheck
+	TLS_DHE_RSA_WITH_AES_256_CBC_SHA256     ID = 0x006B //nolint:golint,stylecheck
+	TLS_DH_ANON_WITH_AES_128_CBC_SHA256     ID = 0x006C //nolint:golint,stylecheck
+	TLS_DH_ANON_WITH_AES_256_CBC_SHA256     ID = 0x006D //nolint:golint,stylecheck
+	TLS_DHE_RSA_WITH_AES_128_GCM_SHA256     ID = 0x009E //nolint:golint,stylecheck
+	TLS_DHE_RSA_WITH_AES_256_GCM_SHA384     ID = 0x009F //nolint:golint,stylecheck
+	TLS_DH_RSA_WITH_AES_128_GCM_SHA256      ID = 0x00A0 //nolint:golint,stylecheck
+	TLS_DH_RSA_WITH_AES_256_GCM_SHA384      ID = 0x00A1 //nolint:golint,stylecheck
+	TLS_DHE_DSS_WITH_AES_128_GCM_SHA256     ID = 0x00A2 //nolint:golint,stylecheck
+	TLS_DHE_DSS_WITH_AES_256_GCM_SHA384     ID = 0x00A3 //nolint:golint,stylecheck
+	TLS_DH_DSS_WITH_AES_128_GCM_SHA256      ID = 0x00A4 //nolint:golint,stylecheck
+	TLS_DH_DSS_WITH_AES_256_GCM_SHA384      ID = 0x00A5 //nolint:golint,stylecheck
+	TLS_DH_ANON_WITH_AES_128_GCM_SHA256     ID = 0x00A6 //nolint:golint,stylecheck
+	TLS_DH_ANON_WITH_AES_256_GCM_SHA384     ID = 0x00A7 //nolint:golint,stylecheck
+	TLS_ECDH_ECDSA_WITH_NULL_SHA            ID = 0xC001 //nolint:golint,stylecheck
+	TLS_ECDHE_ECDSA_WITH_NULL_SHA           ID = 0xC006 //nolint:golint,stylecheck
+	TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA    ID = 0xC009 //nolint:golint,stylecheck
+	TLS_ECDH_RSA_WITH_NULL_SHA              ID = 0xC00B //nolint:golint,stylecheck
+	TLS_ECDHE_RSA_WITH_NULL_SHA             ID = 0xC010 //nolint:golint,stylecheck
+	TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA     ID = 0xC012 //nolint:golint,stylecheck
+	TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA      ID = 0xC013 //nolint:golint,stylecheck
+	TLS_ECDH_ANON_WITH_NULL_SHA             ID = 0xC015 //nolint:golint,stylecheck
+	TLS_ECDH_ANON_WITH_3DES_EDE_CBC_SHA     ID = 0xC017 //nolint:golint,stylecheck
+	TLS_ECDH_ANON_WITH_AES_128_CBC_SHA      ID = 0xC018 //nolint:golint,stylecheck
+	TLS_ECDH_ANON_WITH_AES_256_CBC_SHA      ID = 0xC019 //nolint:golint,stylecheck
+	TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256 ID = 0xC023 //nolint:golint,stylecheck
+	TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA384 ID = 0xC024 //nolint:golint,stylecheck
+	TLS_ECDH_ECDSA_WITH_AES_128_CBC_SHA256  ID = 0xC025 //nolint:golint,stylecheck
+	TLS_ECDH_ECDSA_WITH_AES_256_CBC_SHA384  ID = 0xC026 //nolint:golint,stylecheck
+	TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256   ID = 0xC027 //nolint:golint,stylecheck
+	TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384   ID = 0xC028 //nolint:golint,stylecheck
+	TLS_ECDH_RSA_WITH_AES_128_CBC_SHA256    ID = 0xC029 //nolint:golint,stylecheck
+	TLS_ECDH_RSA_WITH_AES_256_CBC_SHA384    ID = 0xC02A //nolint:golint,stylecheck
+	TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384 ID = 0xC02C //nolint:golint,stylecheck
+	TLS_ECDH_ECDSA_WITH_AES_128_GCM_SHA256  ID = 0xC02D //nolint:golint,stylecheck
+	TLS_ECDH_ECDSA_WITH_AES_256_GCM_SHA384  ID = 0xC02E //nolint:golint,stylecheck
+	TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384   ID = 0xC030 //nolint:golint,stylecheck
+	TLS_ECDH_RSA_WITH_AES_128_GCM_SHA256    ID = 0xC031 //nolint:golint,stylecheck
+	TLS_ECDH_RSA_WITH_AES_256_GCM_SHA384    ID = 0xC032 //nolint:golint,stylecheck
+	TLS_DHE_RSA_WITH_AES_128_CCM            ID = 0xC09E //nolint:golint,stylecheck
+	TLS_DHE_RSA_WITH_AES_256_CCM            ID = 0xC09F //nolint:golint,stylecheck
+	TLS_DHE_RSA_WITH_AES_128_CCM_8          ID = 0xC0A2 //nolint:golint,stylecheck
+	TLS_ECDHE_ECDSA_WITH_AES_256_CCM        ID = 0xC0AD //nolint:golint,stylecheck
+	TLS_ECDHE_ECDSA_WITH_AES_256_CCM_8      ID = 0xC0AF //nolint:golint,stylecheck
+	TLS_DHE_RSA_WITH_AES_256_CCM_8          ID = 0xC0A3 //nolint:golint,stylecheck
+	TLS_DHE_DSS_EXPORT1024_WITH_DES_CBC_SHA ID = 0x0063 //nolint:golint,stylecheck
+	TLS_RSA_EXPORT1024_WITH_DES_CBC_SHA     ID = 0x0062 //nolint:golint,stylecheck
+)
+
+func (i ID) String() string {
+	switch i {
+	case TLS_ECDHE_ECDSA_WITH_AES_128_CCM:
+		return "TLS_ECDHE_ECDSA_WITH_AES_128_CCM"
+	case TLS_ECDHE_ECDSA_WITH_AES_128_CCM_8:
+		return "TLS_ECDHE_ECDSA_WITH_AES_128_CCM_8"
+	case TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256:
+		return "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256"
+	case TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256:
+		return "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256"
+	case TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA:
+		return "TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA"
+	case TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA:
+		return "TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA"
+	case TLS_PSK_WITH_AES_128_CCM:
+		return "TLS_PSK_WITH_AES_128_CCM"
+	case TLS_PSK_WITH_AES_128_CCM_8:
+		return "TLS_PSK_WITH_AES_128_CCM_8"
+	case TLS_PSK_WITH_AES_128_GCM_SHA256:
+		return "TLS_PSK_WITH_AES_128_GCM_SHA256"
+	case TLS_PSK_WITH_AES_128_CBC_SHA256:
+		return "TLS_PSK_WITH_AES_128_CBC_SHA256"
+	case TLS_NULL_WITH_NULL_NULL:
+		return "TLS_NULL_WITH_NULL_NULL"
+	case TLS_RSA_WITH_NULL_MD5:
+		return "TLS_RSA_WITH_NULL_MD5"
+	case TLS_RSA_WITH_NULL_SHA:
+		return "TLS_RSA_WITH_NULL_SHA"
+	case TLS_RSA_EXPORT_WITH_RC2_CBC_40_MD5:
+		return "TLS_RSA_EXPORT_WITH_RC2_CBC_40_MD5"
+	case TLS_RSA_EXPORT_WITH_DES40_CBC_SHA:
+		return "TLS_RSA_EXPORT_WITH_DES40_CBC_SHA"
+	case TLS_RSA_WITH_DES_CBC_SHA:
+		return "TLS_RSA_WITH_DES_CBC_SHA"
+	case TLS_RSA_WITH_3DES_EDE_CBC_SHA:
+		return "TLS_RSA_WITH_3DES_EDE_CBC_SHA"
+	case TLS_DH_DSS_EXPORT_WITH_DES40_CBC_SHA:
+		return "TLS_DH_DSS_EXPORT_WITH_DES40_CBC_SHA"
+	case TLS_DH_DSS_WITH_DES_CBC_SHA:
+		return "TLS_DH_DSS_WITH_DES_CBC_SHA"
+	case TLS_DH_RSA_EXPORT_WITH_DES40_CBC_SHA:
+		return "TLS_DH_RSA_EXPORT_WITH_DES40_CBC_SHA"
+	case TLS_DH_RSA_WITH_DES_CBC_SHA:
+		return "TLS_DH_RSA_WITH_DES_CBC_SHA"
+	case TLS_DHE_DSS_EXPORT_WITH_DES40_CBC_SHA:
+		return "TLS_DHE_DSS_EXPORT_WITH_DES40_CBC_SHA"
+	case TLS_DHE_DSS_WITH_DES_CBC_SHA:
+		return "TLS_DHE_DSS_WITH_DES_CBC_SHA"
+	case TLS_DHE_RSA_EXPORT_WITH_DES40_CBC_SHA:
+		return "TLS_DHE_RSA_EXPORT_WITH_DES40_CBC_SHA"
+	case TLS_DHE_RSA_WITH_DES_CBC_SHA:
+		return "TLS_DHE_RSA_WITH_DES_CBC_SHA"
+	case TLS_DH_ANON_EXPORT_WITH_DES40_CBC_SHA:
+		return "TLS_DH_ANON_EXPORT_WITH_DES40_CBC_SHA"
+	case TLS_DH_ANON_WITH_DES_CBC_SHA:
+		return "TLS_DH_ANON_WITH_DES_CBC_SHA"
+	case TLS_DH_ANON_WITH_3DES_EDE_CBC_SHA:
+		return "TLS_DH_ANON_WITH_3DES_EDE_CBC_SHA"
+	case TLS_RSA_WITH_AES_128_CBC_SHA:
+		return "TLS_RSA_WITH_AES_128_CBC_SHA"
+	case TLS_RSA_WITH_AES_256_CBC_SHA:
+		return "TLS_RSA_WITH_AES_256_CBC_SHA"
+	case TLS_RSA_WITH_NULL_SHA256:
+		return "TLS_RSA_WITH_NULL_SHA256"
+	case TLS_DH_DSS_WITH_AES_128_CBC_SHA256:
+		return "TLS_DH_DSS_WITH_AES_128_CBC_SHA256"
+	case TLS_DH_RSA_WITH_AES_128_CBC_SHA256:
+		return "TLS_DH_RSA_WITH_AES_128_CBC_SHA256"
+	case TLS_DHE_DSS_WITH_AES_128_CBC_SHA256:
+		return "TLS_DHE_DSS_WITH_AES_128_CBC_SHA256"
+	case TLS_DHE_RSA_WITH_AES_128_CBC_SHA256:
+		return "TLS_DHE_RSA_WITH_AES_128_CBC_SHA256"
+	case TLS_DH_DSS_WITH_AES_256_CBC_SHA256:
+		return "TLS_DH_DSS_WITH_AES_256_CBC_SHA256"
+	case TLS_DH_RSA_WITH_AES_256_CBC_SHA256:
+		return "TLS_DH_RSA_WITH_AES_256_CBC_SHA256"
+	case TLS_DHE_DSS_WITH_AES_256_CBC_SHA256:
+		return "TLS_DHE_DSS_WITH_AES_256_CBC_SHA256"
+	case TLS_DHE_RSA_WITH_AES_256_CBC_SHA256:
+		return "TLS_DHE_RSA_WITH_AES_256_CBC_SHA256"
+	case TLS_DH_ANON_WITH_AES_128_CBC_SHA256:
+		return "TLS_DH_ANON_WITH_AES_128_CBC_SHA256"
+	case TLS_DH_ANON_WITH_AES_256_CBC_SHA256:
+		return "TLS_DH_ANON_WITH_AES_256_CBC_SHA256"
+	case TLS_DHE_RSA_WITH_AES_128_GCM_SHA256:
+		return "TLS_DHE_RSA_WITH_AES_128_GCM_SHA256"
+	case TLS_DHE_RSA_WITH_AES_256_GCM_SHA384:
+		return "TLS_DHE_RSA_WITH_AES_256_GCM_SHA384"
+	case TLS_DH_RSA_WITH_AES_128_GCM_SHA256:
+		return "TLS_DH_RSA_WITH_AES_128_GCM_SHA256"
+	case TLS_DH_RSA_WITH_AES_256_GCM_SHA384:
+		return "TLS_DH_RSA_WITH_AES_256_GCM_SHA384"
+	case TLS_DHE_DSS_WITH_AES_128_GCM_SHA256:
+		return "TLS_DHE_DSS_WITH_AES_128_GCM_SHA256"
+	case TLS_DHE_DSS_WITH_AES_256_GCM_SHA384:
+		return "TLS_DHE_DSS_WITH_AES_256_GCM_SHA384"
+	case TLS_DH_DSS_WITH_AES_128_GCM_SHA256:
+		return "TLS_DH_DSS_WITH_AES_128_GCM_SHA256"
+	case TLS_DH_DSS_WITH_AES_256_GCM_SHA384:
+		return "TLS_DH_DSS_WITH_AES_256_GCM_SHA384"
+	case TLS_DH_ANON_WITH_AES_128_GCM_SHA256:
+		return "TLS_DH_ANON_WITH_AES_128_GCM_SHA256"
+	case TLS_DH_ANON_WITH_AES_256_GCM_SHA384:
+		return "TLS_DH_ANON_WITH_AES_256_GCM_SHA384"
+	case TLS_ECDH_ECDSA_WITH_NULL_SHA:
+		return "TLS_ECDH_ECDSA_WITH_NULL_SHA"
+	case TLS_ECDHE_ECDSA_WITH_NULL_SHA:
+		return "TLS_ECDHE_ECDSA_WITH_NULL_SHA"
+	case TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA:
+		return "TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA"
+	case TLS_ECDH_RSA_WITH_NULL_SHA:
+		return "TLS_ECDH_RSA_WITH_NULL_SHA"
+	case TLS_ECDHE_RSA_WITH_NULL_SHA:
+		return "TLS_ECDHE_RSA_WITH_NULL_SHA"
+	case TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA:
+		return "TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA"
+	case TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA:
+		return "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA"
+	case TLS_ECDH_ANON_WITH_NULL_SHA:
+		return "TLS_ECDH_ANON_WITH_NULL_SHA"
+	case TLS_ECDH_ANON_WITH_3DES_EDE_CBC_SHA:
+		return "TLS_ECDH_ANON_WITH_3DES_EDE_CBC_SHA"
+	case TLS_ECDH_ANON_WITH_AES_128_CBC_SHA:
+		return "TLS_ECDH_ANON_WITH_AES_128_CBC_SHA"
+	case TLS_ECDH_ANON_WITH_AES_256_CBC_SHA:
+		return "TLS_ECDH_ANON_WITH_AES_256_CBC_SHA"
+	case TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256:
+		return "TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256"
+	case TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA384:
+		return "TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA384"
+	case TLS_ECDH_ECDSA_WITH_AES_128_CBC_SHA256:
+		return "TLS_ECDH_ECDSA_WITH_AES_128_CBC_SHA256"
+	case TLS_ECDH_ECDSA_WITH_AES_256_CBC_SHA384:
+		return "TLS_ECDH_ECDSA_WITH_AES_256_CBC_SHA384"
+	case TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256:
+		return "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256"
+	case TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384:
+		return "TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384"
+	case TLS_ECDH_RSA_WITH_AES_128_CBC_SHA256:
+		return "TLS_ECDH_RSA_WITH_AES_128_CBC_SHA256"
+	case TLS_ECDH_RSA_WITH_AES_256_CBC_SHA384:
+		return "TLS_ECDH_RSA_WITH_AES_256_CBC_SHA384"
+	case TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384:
+		return "TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384"
+	case TLS_ECDH_ECDSA_WITH_AES_128_GCM_SHA256:
+		return "TLS_ECDH_ECDSA_WITH_AES_128_GCM_SHA256"
+	case TLS_ECDH_ECDSA_WITH_AES_256_GCM_SHA384:
+		return "TLS_ECDH_ECDSA_WITH_AES_256_GCM_SHA384"
+	case TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384:
+		return "TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384"
+	case TLS_ECDH_RSA_WITH_AES_128_GCM_SHA256:
+		return "TLS_ECDH_RSA_WITH_AES_128_GCM_SHA256"
+	case TLS_ECDH_RSA_WITH_AES_256_GCM_SHA384:
+		return "TLS_ECDH_RSA_WITH_AES_256_GCM_SHA384"
+	case TLS_DHE_RSA_WITH_AES_128_CCM:
+		return "TLS_DHE_RSA_WITH_AES_128_CCM"
+	case TLS_DHE_RSA_WITH_AES_256_CCM:
+		return "TLS_DHE_RSA_WITH_AES_256_CCM"
+	case TLS_DHE_RSA_WITH_AES_128_CCM_8:
+		return "TLS_DHE_RSA_WITH_AES_128_CCM_8"
+	case TLS_ECDHE_ECDSA_WITH_AES_256_CCM:
+		return "TLS_ECDHE_ECDSA_WITH_AES_256_CCM"
+	case TLS_ECDHE_ECDSA_WITH_AES_256_CCM_8:
+		return "TLS_ECDHE_ECDSA_WITH_AES_256_CCM_8"
+	case TLS_DHE_DSS_EXPORT1024_WITH_DES_CBC_SHA:
+		return "TLS_DHE_DSS_EXPORT1024_WITH_DES_CBC_SHA"
+	case TLS_RSA_EXPORT1024_WITH_DES_CBC_SHA:
+		return "TLS_RSA_EXPORT1024_WITH_DES_CBC_SHA"
+	default:
+		return fmt.Sprintf("unknown(%v)", uint16(i))
+	}
+}
+
+func (i ID) MarshalJSON() ([]byte, error) {
+	aux := struct {
+		Hex   string `json:"hex"`
+		Name  string `json:"name"`
+		Value uint16 `json:"value"`
+	}{
+		fmt.Sprintf("0x%X", uint16(i)),
+		i.String(),
+		uint16(i),
+	}
+	return json.Marshal(aux)
+}

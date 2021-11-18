@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	cs "github.com/pion/dtls/v2/pkg/protocol/ciphersuite"
 	"io"
 	"net"
 	"os"
@@ -83,7 +84,7 @@ type HandshakeError = protocol.HandshakeError
 
 // invalidCipherSuite indicates an attempt at using an unsupported cipher suite.
 type invalidCipherSuite struct {
-	id CipherSuiteID
+	id cs.ID
 }
 
 func (e *invalidCipherSuite) Error() string {

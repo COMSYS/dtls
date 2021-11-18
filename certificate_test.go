@@ -9,17 +9,17 @@ import (
 )
 
 func TestGetCertificate(t *testing.T) {
-	certificateWildcard, err := selfsign.GenerateSelfSignedWithDNS("*.test.test")
+	certificateWildcard, err := selfsign.GenerateSelfSignedWithDNS("ecdsa", "*.test.test")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	certificateTest, err := selfsign.GenerateSelfSignedWithDNS("test.test", "www.test.test", "pop.test.test")
+	certificateTest, err := selfsign.GenerateSelfSignedWithDNS("ecdsa", "test.test", "www.test.test", "pop.test.test")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	certificateRandom, err := selfsign.GenerateSelfSigned()
+	certificateRandom, err := selfsign.GenerateSelfSigned("ecdsa")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -27,8 +27,8 @@ func TestCipherSuites(t *testing.T) {
 		s := s
 		t.Run(s.String(), func(t *testing.T) {
 			c := theirs[i]
-			if c.ID != uint16(s.ID()) {
-				t.Fatalf("Expected ID: 0x%04X, got 0x%04X", s.ID(), c.ID)
+			if c.ID != uint16(s) {
+				t.Fatalf("Expected ID: 0x%04X, got 0x%04X", s, c.ID)
 			}
 
 			if c.Name != s.String() {

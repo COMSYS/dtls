@@ -7,6 +7,8 @@ import ( //nolint:gci
 	"crypto/sha1" //nolint:gosec
 	"crypto/sha256"
 	"crypto/sha512"
+	"encoding/json"
+	"fmt"
 )
 
 // Algorithm is used to indicate the hash algorithm used
@@ -123,4 +125,29 @@ func Algorithms() map[Algorithm]struct{} {
 		SHA512:  {},
 		Ed25519: {},
 	}
+}
+
+func (h Algorithm) MarshalJSON() ([]byte, error) {
+	var name string
+	switch h {
+	case None:
+		name = "None"
+	case MD5:
+		name = "MD5"
+	case SHA1:
+		name = "SHA1"
+	case SHA224:
+		name = "SHA224"
+	case SHA256:
+		name = "SHA256"
+	case SHA384:
+		name = "SHA384"
+	case SHA512:
+		name = "SHA512"
+	case Ed25519:
+		name = "NULL"
+	default:
+		name = fmt.Sprintf("unknown(%d)", int(h))
+	}
+	return json.Marshal(name)
 }

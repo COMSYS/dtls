@@ -38,7 +38,7 @@ func DoTestResume(t *testing.T, newLocal, newRemote func(net.Conn, *Config) (*Co
 	report := test.CheckRoutines(t)
 	defer report()
 
-	certificate, err := selfsign.GenerateSelfSigned()
+	certificate, err := selfsign.GenerateSelfSigned("ecdsa")
 	if err != nil {
 		t.Fatal(err)
 	}

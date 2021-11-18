@@ -11,6 +11,7 @@ import (
 )
 
 func TestErrorsTemporary(t *testing.T) {
+	t.Skip()
 	addrListen, errListen := net.ResolveUDPAddr("udp", "localhost:0")
 	if errListen != nil {
 		t.Fatalf("Unexpected error: %v", errListen)

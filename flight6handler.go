@@ -19,9 +19,11 @@ func flight6Parse(ctx context.Context, c flightConn, state *State, cache *handsh
 		return 0, nil, nil
 	}
 
-	if _, ok = msgs[handshake.TypeFinished].(*handshake.MessageFinished); !ok {
+	var finished *handshake.MessageFinished
+	if finished, ok = msgs[handshake.TypeFinished].(*handshake.MessageFinished); !ok {
 		return 0, &alert.Alert{Level: alert.Fatal, Description: alert.InternalError}, nil
 	}
+	state.handshakeLog.ServerFinished = finished.MakeLog()
 
 	// Other party retransmitted the last flight.
 	return flight6, nil, nil
@@ -61,6 +63,11 @@ func flight6Generate(c flightConn, state *State, cache *handshakeCache, cfg *han
 		}
 	}
 
+	msg := &handshake.MessageFinished{
+		VerifyData: state.localVerifyData,
+	}
+	state.handshakeLog.ServerFinished = msg.MakeLog()
+
 	pkts = append(pkts,
 		&packet{
 			record: &recordlayer.RecordLayer{
@@ -69,9 +76,7 @@ func flight6Generate(c flightConn, state *State, cache *handshakeCache, cfg *han
 					Epoch:   1,
 				},
 				Content: &handshake.Handshake{
-					Message: &handshake.MessageFinished{
-						VerifyData: state.localVerifyData,
-					},
+					Message: msg,
 				},
 			},
 			shouldEncrypt:            true,

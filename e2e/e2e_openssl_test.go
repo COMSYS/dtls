@@ -3,14 +3,13 @@
 package e2e
 
 import (
-	"crypto/x509"
-	"encoding/pem"
 	"errors"
 	"fmt"
-	"io/ioutil"
+	log "github.com/sirupsen/logrus"
 	"net"
 	"os"
 	"os/exec"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -32,11 +31,16 @@ func serverOpenSSL(c *comm) {
 			"-quiet",
 			"-verify_quiet",
 			"-verify_return_error",
-			fmt.Sprintf("-accept=%d", c.serverPort),
+			"-accept",
+		}
+		if runtime.GOOS == "windows" {
+			args = append(args, fmt.Sprintf("127.0.0.1:%d", c.serverPort))
+		} else {
+			args = append(args, fmt.Sprintf("%d", c.serverPort))
 		}
 		ciphers := ciphersOpenSSL(cfg)
 		if ciphers != "" {
-			args = append(args, fmt.Sprintf("-cipher=%s", ciphers))
+			args = append(args, "-cipher", ciphers)
 		}
 
 		// psk arguments
@@ -46,9 +50,9 @@ func serverOpenSSL(c *comm) {
 				c.errChan <- err
 				return
 			}
-			args = append(args, fmt.Sprintf("-psk=%X", psk))
+			args = append(args, "-psk", fmt.Sprintf("%X", psk))
 			if len(cfg.PSKIdentityHint) > 0 {
-				args = append(args, fmt.Sprintf("-psk_hint=%s", cfg.PSKIdentityHint))
+				args = append(args, "-psk_hint", fmt.Sprintf("%s", cfg.PSKIdentityHint))
 			}
 		}
 
@@ -60,9 +64,7 @@ func serverOpenSSL(c *comm) {
 				c.errChan <- err
 				return
 			}
-			args = append(args,
-				fmt.Sprintf("-cert=%s", certPEM),
-				fmt.Sprintf("-key=%s", keyPEM))
+			args = append(args, "-cert", certPEM, "-key", keyPEM)
 			defer func() {
 				_ = os.Remove(certPEM)
 				_ = os.Remove(keyPEM)
@@ -70,6 +72,7 @@ func serverOpenSSL(c *comm) {
 		} else {
 			args = append(args, "-nocert")
 		}
+		log.Infof("openssl %s", strings.Join(args, " "))
 
 		// launch command
 		// #nosec G204
@@ -84,12 +87,13 @@ func serverOpenSSL(c *comm) {
 			_ = inner.Close()
 			return
 		}
+		defer cmd.Process.Kill()
 
 		// Ensure that server has started
 		time.Sleep(500 * time.Millisecond)
 
 		c.serverReady <- struct{}{}
-		simpleReadWrite(c.errChan, c.serverChan, c.serverConn, c.messageRecvCount)
+		simpleReadWrite(c.ctx, c.errChan, c.serverChan, c.serverConn, c.messageRecvCount)
 	}()
 }
 
@@ -113,12 +117,18 @@ func clientOpenSSL(c *comm) {
 		"-quiet",
 		"-verify_quiet",
 		"-verify_return_error",
-		"-servername=localhost",
-		fmt.Sprintf("-connect=127.0.0.1:%d", c.serverPort),
+		"-servername",
+		"localhost",
+		"-connect",
+	}
+	if runtime.GOOS == "windows" {
+		args = append(args, fmt.Sprintf("127.0.0.1:%d", c.serverPort))
+	} else {
+		args = append(args, fmt.Sprintf("%d", c.serverPort))
 	}
 	ciphers := ciphersOpenSSL(cfg)
 	if ciphers != "" {
-		args = append(args, fmt.Sprintf("-cipher=%s", ciphers))
+		args = append(args, "-cipher", ciphers)
 	}
 
 	// psk arguments
@@ -128,7 +138,7 @@ func clientOpenSSL(c *comm) {
 			c.errChan <- err
 			return
 		}
-		args = append(args, fmt.Sprintf("-psk=%X", psk))
+		args = append(args, "-psk", fmt.Sprintf("%X", psk))
 	}
 
 	// certificate arguments
@@ -139,7 +149,7 @@ func clientOpenSSL(c *comm) {
 			c.errChan <- err
 			return
 		}
-		args = append(args, fmt.Sprintf("-CAfile=%s", certPEM))
+		args = append(args, "-CAfile", certPEM)
 		defer func() {
 			_ = os.Remove(certPEM)
 			_ = os.Remove(keyPEM)
@@ -160,7 +170,7 @@ func clientOpenSSL(c *comm) {
 		return
 	}
 
-	simpleReadWrite(c.errChan, c.clientChan, c.clientConn, c.messageRecvCount)
+	simpleReadWrite(c.ctx, c.errChan, c.clientChan, c.clientConn, c.messageRecvCount)
 }
 
 func ciphersOpenSSL(cfg *dtls.Config) string {
@@ -172,11 +182,82 @@ func ciphersOpenSSL(cfg *dtls.Config) string {
 		dtls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256:   "ECDHE-RSA-AES128-GCM-SHA256",
 
 		dtls.TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA: "ECDHE-ECDSA-AES256-SHA",
-		dtls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA:   "ECDHE-RSA-AES128-SHA",
+		dtls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA:   "ECDHE-RSA-AES256-SHA",
 
 		dtls.TLS_PSK_WITH_AES_128_CCM:        "PSK-AES128-CCM",
 		dtls.TLS_PSK_WITH_AES_128_CCM_8:      "PSK-AES128-CCM8",
 		dtls.TLS_PSK_WITH_AES_128_GCM_SHA256: "PSK-AES128-GCM-SHA256",
+		// Added Johannes
+		dtls.TLS_RSA_WITH_NULL_MD5:                   "NULL-MD5",
+		dtls.TLS_RSA_WITH_NULL_SHA:                   "NULL-SHA",
+		dtls.TLS_RSA_EXPORT_WITH_RC2_CBC_40_MD5:      "EXP-RC2-CBC-MD5",
+		dtls.TLS_RSA_EXPORT_WITH_DES40_CBC_SHA:       "EXP-DES-CBC-SHA",
+		dtls.TLS_RSA_WITH_DES_CBC_SHA:                "DES-CBC-SHA",
+		dtls.TLS_RSA_WITH_3DES_EDE_CBC_SHA:           "DES-CBC3-SHA",
+		dtls.TLS_DH_DSS_EXPORT_WITH_DES40_CBC_SHA:    "EXP-DH-DSS-DES-CBC-SHA",
+		dtls.TLS_DH_DSS_WITH_DES_CBC_SHA:             "DH-DSS-DES-CBC-SHA",
+		dtls.TLS_DH_RSA_EXPORT_WITH_DES40_CBC_SHA:    "EXP-DH-RSA-DES-CBC-SHA",
+		dtls.TLS_DH_RSA_WITH_DES_CBC_SHA:             "DH-RSA-DES-CBC-SHA",
+		dtls.TLS_DHE_DSS_EXPORT_WITH_DES40_CBC_SHA:   "EXP-EDH-DSS-DES-CBC-SHA",
+		dtls.TLS_DHE_DSS_WITH_DES_CBC_SHA:            "EDH-DSS-DES-CBC-SHA",
+		dtls.TLS_DHE_RSA_EXPORT_WITH_DES40_CBC_SHA:   "EXP-EDH-RSA-DES-CBC-SHA",
+		dtls.TLS_DHE_RSA_WITH_DES_CBC_SHA:            "EDH-RSA-DES-CBC-SHA",
+		dtls.TLS_DH_ANON_EXPORT_WITH_DES40_CBC_SHA:   "EXP-ADH-DES-CBC-SHA",
+		dtls.TLS_DH_ANON_WITH_DES_CBC_SHA:            "ADH-DES-CBC-SHA",
+		dtls.TLS_DH_ANON_WITH_3DES_EDE_CBC_SHA:       "ADH-DES-CBC3-SHA",
+		dtls.TLS_RSA_WITH_AES_128_CBC_SHA:            "AES128-SHA",
+		dtls.TLS_RSA_WITH_AES_256_CBC_SHA:            "AES256-SHA",
+		dtls.TLS_RSA_WITH_NULL_SHA256:                "NULL-SHA256",
+		dtls.TLS_DH_DSS_WITH_AES_128_CBC_SHA256:      "DH-DSS-AES128-SHA256",
+		dtls.TLS_DH_RSA_WITH_AES_128_CBC_SHA256:      "DH-RSA-AES128-SHA256",
+		dtls.TLS_DHE_DSS_WITH_AES_128_CBC_SHA256:     "DHE-DSS-AES128-SHA256",
+		dtls.TLS_DHE_RSA_WITH_AES_128_CBC_SHA256:     "DHE-RSA-AES128-SHA256",
+		dtls.TLS_DH_DSS_WITH_AES_256_CBC_SHA256:      "DH-DSS-AES256-SHA256",
+		dtls.TLS_DH_RSA_WITH_AES_256_CBC_SHA256:      "DH-RSA-AES256-SHA256",
+		dtls.TLS_DHE_DSS_WITH_AES_256_CBC_SHA256:     "DHE-DSS-AES256-SHA256",
+		dtls.TLS_DHE_RSA_WITH_AES_256_CBC_SHA256:     "DHE-RSA-AES256-SHA256",
+		dtls.TLS_DH_ANON_WITH_AES_128_CBC_SHA256:     "ADH-AES128-SHA256",
+		dtls.TLS_DH_ANON_WITH_AES_256_CBC_SHA256:     "ADH-AES256-SHA256",
+		dtls.TLS_DHE_RSA_WITH_AES_128_GCM_SHA256:     "DHE-RSA-AES128-GCM-SHA256",
+		dtls.TLS_DHE_RSA_WITH_AES_256_GCM_SHA384:     "DH-RSA-AES128-GCM-SHA256",
+		dtls.TLS_DH_RSA_WITH_AES_128_GCM_SHA256:      "DH-RSA-AES128-GCM-SHA256",
+		dtls.TLS_DH_RSA_WITH_AES_256_GCM_SHA384:      "DH-RSA-AES256-GCM-SHA384",
+		dtls.TLS_DHE_DSS_WITH_AES_128_GCM_SHA256:     "DHE-DSS-AES128-GCM-SHA256",
+		dtls.TLS_DHE_DSS_WITH_AES_256_GCM_SHA384:     "DHE-DSS-AES256-GCM-SHA384",
+		dtls.TLS_DH_DSS_WITH_AES_128_GCM_SHA256:      "DH-DSS-AES128-GCM-SHA256",
+		dtls.TLS_DH_DSS_WITH_AES_256_GCM_SHA384:      "DH-DSS-AES256-GCM-SHA384",
+		dtls.TLS_DH_ANON_WITH_AES_128_GCM_SHA256:     "ADH-AES128-GCM-SHA256",
+		dtls.TLS_DH_ANON_WITH_AES_256_GCM_SHA384:     "ADH-AES256-GCM-SHA384",
+		dtls.TLS_ECDH_ECDSA_WITH_NULL_SHA:            "ECDH-ECDSA-NULL-SHA",
+		dtls.TLS_ECDHE_ECDSA_WITH_NULL_SHA:           "ECDHE-ECDSA-NULL-SHA",
+		dtls.TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA:    "ECDHE-ECDSA-AES128-SHA",
+		dtls.TLS_ECDH_RSA_WITH_NULL_SHA:              "ECDH-RSA-NULL-SHA",
+		dtls.TLS_ECDHE_RSA_WITH_NULL_SHA:             "ECDHE-RSA-NULL-SHA",
+		dtls.TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA:     "ECDHE-RSA-DES-CBC3-SHA",
+		dtls.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA:      "ECDHE-RSA-AES128-SHA",
+		dtls.TLS_ECDH_ANON_WITH_NULL_SHA:             "AECDH-NULL-SHA",
+		dtls.TLS_ECDH_ANON_WITH_3DES_EDE_CBC_SHA:     "AECDH-DES-CBC3-SHA",
+		dtls.TLS_ECDH_ANON_WITH_AES_128_CBC_SHA:      "AECDH-AES128-SHA",
+		dtls.TLS_ECDH_ANON_WITH_AES_256_CBC_SHA:      "AECDH-AES256-SHA",
+		dtls.TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256: "ECDHE-ECDSA-AES128-SHA256",
+		dtls.TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA384: "ECDHE-ECDSA-AES256-SHA384",
+		dtls.TLS_ECDH_ECDSA_WITH_AES_128_CBC_SHA256:  "ECDH-ECDSA-AES128-SHA256",
+		dtls.TLS_ECDH_ECDSA_WITH_AES_256_CBC_SHA384:  "ECDH-ECDSA-AES256-SHA384",
+		dtls.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256:   "ECDHE-RSA-AES128-SHA256",
+		dtls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384:   "ECDHE-RSA-AES256-SHA384",
+		dtls.TLS_ECDH_RSA_WITH_AES_128_CBC_SHA256:    "ECDH-RSA-AES128-SHA256",
+		dtls.TLS_ECDH_RSA_WITH_AES_256_CBC_SHA384:    "ECDH-RSA-AES256-SHA384",
+		dtls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384: "ECDHE-ECDSA-AES256-GCM-SHA384",
+		dtls.TLS_ECDH_ECDSA_WITH_AES_128_GCM_SHA256:  "ECDH-ECDSA-AES128-GCM-SHA256",
+		dtls.TLS_ECDH_ECDSA_WITH_AES_256_GCM_SHA384:  "ECDH-ECDSA-AES256-GCM-SHA384",
+		dtls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384:   "ECDHE-RSA-AES256-GCM-SHA384",
+		dtls.TLS_ECDH_RSA_WITH_AES_128_GCM_SHA256:    "ECDH-RSA-AES128-GCM-SHA256",
+		dtls.TLS_ECDH_RSA_WITH_AES_256_GCM_SHA384:    "ECDH-RSA-AES256-GCM-SHA384",
+		dtls.TLS_DHE_RSA_WITH_AES_128_CCM:            "DHE-RSA-AES128-CCM",
+		dtls.TLS_DHE_RSA_WITH_AES_256_CCM:            "DHE-RSA-AES256-CCM",
+		dtls.TLS_DHE_RSA_WITH_AES_128_CCM_8:          "DHE-RSA-AES128-CCM8",
+		dtls.TLS_ECDHE_ECDSA_WITH_AES_256_CCM:        "ECDHE-ECDSA-AES256-CCM",
+		dtls.TLS_ECDHE_ECDSA_WITH_AES_256_CCM_8:      "ECDHE-ECDSA-AES256-CCM8",
 	}
 
 	var ciphers []string
@@ -188,46 +269,34 @@ func ciphersOpenSSL(cfg *dtls.Config) string {
 	return strings.Join(ciphers, ";")
 }
 
-func writeTempPEM(cfg *dtls.Config) (string, string, error) {
-	certOut, err := ioutil.TempFile("", "cert.pem")
-	if err != nil {
-		return "", "", fmt.Errorf("failed to create temporary file: %w", err)
-	}
-	keyOut, err := ioutil.TempFile("", "key.pem")
-	if err != nil {
-		return "", "", fmt.Errorf("failed to create temporary file: %w", err)
-	}
-
-	cert := cfg.Certificates[0]
-	derBytes := cert.Certificate[0]
-	if err = pem.Encode(certOut, &pem.Block{Type: "CERTIFICATE", Bytes: derBytes}); err != nil {
-		return "", "", fmt.Errorf("failed to write data to cert.pem: %w", err)
-	}
-	if err = certOut.Close(); err != nil {
-		return "", "", fmt.Errorf("error closing cert.pem: %w", err)
-	}
-
-	priv := cert.PrivateKey
-	var privBytes []byte
-	privBytes, err = x509.MarshalPKCS8PrivateKey(priv)
-	if err != nil {
-		return "", "", fmt.Errorf("unable to marshal private key: %w", err)
-	}
-	if err = pem.Encode(keyOut, &pem.Block{Type: "PRIVATE KEY", Bytes: privBytes}); err != nil {
-		return "", "", fmt.Errorf("failed to write data to key.pem: %w", err)
-	}
-	if err = keyOut.Close(); err != nil {
-		return "", "", fmt.Errorf("error closing key.pem: %w", err)
-	}
-	return certOut.Name(), keyOut.Name(), nil
-}
-
 func TestPionOpenSSLE2ESimple(t *testing.T) {
+	tcs := []testCase{
+		{dtls.TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA, "ecdsa"},
+		{dtls.TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256, "ecdsa"},
+		{dtls.TLS_ECDHE_ECDSA_WITH_AES_128_CCM, "ecdsa"},
+		{dtls.TLS_ECDHE_ECDSA_WITH_AES_128_CCM_8, "ecdsa"},
+		{dtls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256, "ecdsa"},
+		{dtls.TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA, "ecdsa"},
+		{dtls.TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA384, "ecdsa"},
+		{dtls.TLS_ECDHE_ECDSA_WITH_AES_256_CCM, "ecdsa"},
+		{dtls.TLS_ECDHE_ECDSA_WITH_AES_256_CCM_8, "ecdsa"},
+		{dtls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384, "ecdsa"},
+		{dtls.TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA, "rsa"},
+		{dtls.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA, "rsa"},
+		{dtls.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256, "rsa"},
+		{dtls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256, "rsa"},
+		{dtls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA, "rsa"},
+		{dtls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384, "rsa"},
+		{dtls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384, "rsa"},
+		{dtls.TLS_RSA_WITH_3DES_EDE_CBC_SHA, "rsa"},
+		{dtls.TLS_RSA_WITH_AES_128_CBC_SHA, "rsa"},
+		{dtls.TLS_RSA_WITH_AES_256_CBC_SHA, "rsa"},
+	}
 	t.Run("OpenSSLServer", func(t *testing.T) {
-		testPionE2ESimple(t, serverOpenSSL, clientPion)
+		testPionE2ESimple(t, serverOpenSSL, clientPion, tcs)
 	})
 	t.Run("OpenSSLClient", func(t *testing.T) {
-		testPionE2ESimple(t, serverPion, clientOpenSSL)
+		testPionE2ESimple(t, serverPion, clientOpenSSL, tcs)
 	})
 }
 

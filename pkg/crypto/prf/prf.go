@@ -7,6 +7,7 @@ import ( //nolint:gci
 	"encoding/binary"
 	"errors"
 	"fmt"
+	log "github.com/sirupsen/logrus"
 	"hash"
 	"math"
 
@@ -137,6 +138,14 @@ func PHash(secret, seed []byte, requestedLength int, h HashFunc) ([]byte, error)
 	lastRound := seed
 	out := []byte{}
 
+	// workaround for NULL cipher
+	if h().Size() == 0 {
+		for i := 0; i < requestedLength; i++ {
+			out = append(out, 0)
+		}
+		return out[:requestedLength], nil
+	}
+
 	iterations := int(math.Ceil(float64(requestedLength) / float64(h().Size())))
 	for i := 0; i < iterations; i++ {
 		lastRound, err = hmacSHA256(secret, lastRound)
@@ -174,7 +183,7 @@ func GenerateEncryptionKeys(masterSecret, clientRandom, serverRandom []byte, mac
 	if err != nil {
 		return nil, err
 	}
-
+	log.Debugf("key block: %X", keyMaterial)
 	clientMACKey := keyMaterial[:macLen]
 	keyMaterial = keyMaterial[macLen:]
 

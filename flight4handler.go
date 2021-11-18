@@ -32,11 +32,15 @@ func flight4Parse(ctx context.Context, c flightConn, state *State, cache *handsh
 		return 0, &alert.Alert{Level: alert.Fatal, Description: alert.InternalError}, nil
 	}
 
+	state.handshakeLog.ClientKeyExchange = clientKeyExchange.MakeLog()
+
 	if h, hasCert := msgs[handshake.TypeCertificate].(*handshake.MessageCertificate); hasCert {
+		state.handshakeLog.ClientCertificates = h.MakeLog()
 		state.PeerCertificates = h.Certificate
 	}
 
 	if h, hasCertVerify := msgs[handshake.TypeCertificateVerify].(*handshake.MessageCertificateVerify); hasCertVerify {
+		state.handshakeLog.CertificateVerify = h.MakeLog()
 		if state.PeerCertificates == nil {
 			return 0, &alert.Alert{Level: alert.Fatal, Description: alert.NoCertificate}, errCertificateVerifyNoCertificate
 		}
@@ -52,7 +56,7 @@ func flight4Parse(ctx context.Context, c flightConn, state *State, cache *handsh
 			handshakeCachePullRule{handshake.TypeClientKeyExchange, cfg.initialEpoch, true, false},
 		)
 
-		// Verify that the pair of hash algorithm and signiture is listed.
+		// Verify that the pair of hash algorithm and signature is listed.
 		var validSignatureScheme bool
 		for _, ss := range cfg.localSignatureSchemes {
 			if ss.Hash == h.HashAlgorithm && ss.Signature == h.SignatureAlgorithm {
@@ -104,19 +108,21 @@ func flight4Parse(ctx context.Context, c flightConn, state *State, cache *handsh
 			}
 		}
 
+		// TODO handle static RSA preMasterSecret
+
 		if state.extendedMasterSecret {
 			var sessionHash []byte
-			sessionHash, err = cache.sessionHash(state.cipherSuite.HashFunc(), cfg.initialEpoch)
+			sessionHash, err = cache.sessionHash(state.cipherSuite.PrfHashFunc(), cfg.initialEpoch)
 			if err != nil {
 				return 0, &alert.Alert{Level: alert.Fatal, Description: alert.InternalError}, err
 			}
 
-			state.masterSecret, err = prf.ExtendedMasterSecret(preMasterSecret, sessionHash, state.cipherSuite.HashFunc())
+			state.masterSecret, err = prf.ExtendedMasterSecret(preMasterSecret, sessionHash, state.cipherSuite.PrfHashFunc())
 			if err != nil {
 				return 0, &alert.Alert{Level: alert.Fatal, Description: alert.InternalError}, err
 			}
 		} else {
-			state.masterSecret, err = prf.MasterSecret(preMasterSecret, clientRandom[:], serverRandom[:], state.cipherSuite.HashFunc())
+			state.masterSecret, err = prf.MasterSecret(preMasterSecret, clientRandom[:], serverRandom[:], state.cipherSuite.PrfHashFunc())
 			if err != nil {
 				return 0, &alert.Alert{Level: alert.Fatal, Description: alert.InternalError}, err
 			}
@@ -125,6 +131,7 @@ func flight4Parse(ctx context.Context, c flightConn, state *State, cache *handsh
 		if err := state.cipherSuite.Init(state.masterSecret, clientRandom[:], serverRandom[:], false); err != nil {
 			return 0, &alert.Alert{Level: alert.Fatal, Description: alert.InternalError}, err
 		}
+		cfg.writeKeyLog(keyLogLabelTLS12, clientRandom[:], state.masterSecret)
 	}
 
 	// Now, encrypted packets can be handled
@@ -201,19 +208,22 @@ func flight4Generate(c flightConn, state *State, cache *handshakeCache, cfg *han
 	var pkts []*packet
 	cipherSuiteID := uint16(state.cipherSuite.ID())
 
+	sh := &handshake.MessageServerHello{
+		Version:           protocol.Version1_2,
+		Random:            state.localRandom,
+		CipherSuiteID:     &cipherSuiteID,
+		CompressionMethod: defaultCompressionMethods()[0],
+		Extensions:        extensions,
+	}
+	state.handshakeLog.ServerHello = sh.MakeLog()
+
 	pkts = append(pkts, &packet{
 		record: &recordlayer.RecordLayer{
 			Header: recordlayer.Header{
 				Version: protocol.Version1_2,
 			},
 			Content: &handshake.Handshake{
-				Message: &handshake.MessageServerHello{
-					Version:           protocol.Version1_2,
-					Random:            state.localRandom,
-					CipherSuiteID:     &cipherSuiteID,
-					CompressionMethod: defaultCompressionMethods()[0],
-					Extensions:        extensions,
-				},
+				Message: sh,
 			},
 		},
 	})
@@ -225,21 +235,27 @@ func flight4Generate(c flightConn, state *State, cache *handshakeCache, cfg *han
 			return nil, &alert.Alert{Level: alert.Fatal, Description: alert.HandshakeFailure}, err
 		}
 
+		cert := &handshake.MessageCertificate{
+			Certificate: certificate.Certificate,
+		}
+		state.handshakeLog.ServerCertificates = cert.MakeLog()
+
 		pkts = append(pkts, &packet{
 			record: &recordlayer.RecordLayer{
 				Header: recordlayer.Header{
 					Version: protocol.Version1_2,
 				},
 				Content: &handshake.Handshake{
-					Message: &handshake.MessageCertificate{
-						Certificate: certificate.Certificate,
-					},
+					Message: cert,
 				},
 			},
 		})
 
 		serverRandom := state.localRandom.MarshalFixed()
 		clientRandom := state.remoteRandom.MarshalFixed()
+
+		// TODO skip if ecdh_ecdsa, ecdh_rsa, dh_rsa, dhe_rsa, rsa
+		// TODO handle dhe_rsa, dh_anon, ecdh_anon
 
 		// Find compatible signature scheme
 		signatureHashAlgo, err := signaturehash.SelectSignatureScheme(cfg.localSignatureSchemes, certificate.PrivateKey)
@@ -253,35 +269,41 @@ func flight4Generate(c flightConn, state *State, cache *handshakeCache, cfg *han
 		}
 		state.localKeySignature = signature
 
+		ske := &handshake.MessageServerKeyExchange{
+			EllipticCurveType:  elliptic.CurveTypeNamedCurve,
+			NamedCurve:         state.namedCurve,
+			PublicKey:          state.localKeypair.PublicKey,
+			HashAlgorithm:      signatureHashAlgo.Hash,
+			SignatureAlgorithm: signatureHashAlgo.Signature,
+			Signature:          state.localKeySignature,
+		}
+		state.handshakeLog.ServerKeyExchange = ske.MakeLog()
+
 		pkts = append(pkts, &packet{
 			record: &recordlayer.RecordLayer{
 				Header: recordlayer.Header{
 					Version: protocol.Version1_2,
 				},
 				Content: &handshake.Handshake{
-					Message: &handshake.MessageServerKeyExchange{
-						EllipticCurveType:  elliptic.CurveTypeNamedCurve,
-						NamedCurve:         state.namedCurve,
-						PublicKey:          state.localKeypair.PublicKey,
-						HashAlgorithm:      signatureHashAlgo.Hash,
-						SignatureAlgorithm: signatureHashAlgo.Signature,
-						Signature:          state.localKeySignature,
-					},
+					Message: ske,
 				},
 			},
 		})
 
 		if cfg.clientAuth > NoClientCert {
+			certReq := &handshake.MessageCertificateRequest{
+				CertificateTypes:        []clientcertificate.Type{clientcertificate.RSASign, clientcertificate.ECDSASign},
+				SignatureHashAlgorithms: cfg.localSignatureSchemes,
+			}
+			state.handshakeLog.CertificateRequest = certReq.MakeLog()
+
 			pkts = append(pkts, &packet{
 				record: &recordlayer.RecordLayer{
 					Header: recordlayer.Header{
 						Version: protocol.Version1_2,
 					},
 					Content: &handshake.Handshake{
-						Message: &handshake.MessageCertificateRequest{
-							CertificateTypes:        []clientcertificate.Type{clientcertificate.RSASign, clientcertificate.ECDSASign},
-							SignatureHashAlgorithms: cfg.localSignatureSchemes,
-						},
+						Message: certReq,
 					},
 				},
 			})
@@ -292,15 +314,18 @@ func flight4Generate(c flightConn, state *State, cache *handshakeCache, cfg *han
 		// If no hint is provided, the ServerKeyExchange message is omitted.
 		//
 		// https://tools.ietf.org/html/rfc4279#section-2
+		ske := &handshake.MessageServerKeyExchange{
+			IdentityHint: cfg.localPSKIdentityHint,
+		}
+		state.handshakeLog.ServerKeyExchange = ske.MakeLog()
+
 		pkts = append(pkts, &packet{
 			record: &recordlayer.RecordLayer{
 				Header: recordlayer.Header{
 					Version: protocol.Version1_2,
 				},
 				Content: &handshake.Handshake{
-					Message: &handshake.MessageServerKeyExchange{
-						IdentityHint: cfg.localPSKIdentityHint,
-					},
+					Message: ske,
 				},
 			},
 		})

@@ -1,7 +1,6 @@
 package ciphersuite
 
 import (
-	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
 	"encoding/binary"
@@ -23,8 +22,8 @@ type GCM struct {
 }
 
 // NewGCM creates a DTLS GCM Cipher
-func NewGCM(localKey, localWriteIV, remoteKey, remoteWriteIV []byte) (*GCM, error) {
-	localBlock, err := aes.NewCipher(localKey)
+func NewGCM(newCipherFunc NewCipherFunc, localKey, localWriteIV, remoteKey, remoteWriteIV []byte) (*GCM, error) {
+	localBlock, err := newCipherFunc(localKey)
 	if err != nil {
 		return nil, err
 	}
@@ -33,7 +32,7 @@ func NewGCM(localKey, localWriteIV, remoteKey, remoteWriteIV []byte) (*GCM, erro
 		return nil, err
 	}
 
-	remoteBlock, err := aes.NewCipher(remoteKey)
+	remoteBlock, err := newCipherFunc(remoteKey)
 	if err != nil {
 		return nil, err
 	}
